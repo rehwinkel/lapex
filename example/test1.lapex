@@ -1,0 +1,6 @@
+token LPAR = "(ass)";
+token RPAR = ")";
+token KWIF = "if";
+token KWELSE = "else";
+
+
