@@ -209,7 +209,127 @@ fn parse_token_rule<'src>(input: &'src [u8]) -> IResult<&'src [u8], TokenRule> {
     ))
 }
 
-pub fn parse_lapex<'src>(input: &'src [u8]) -> IResult<&'src [u8], Vec<TokenRule<'src>>> {
-    let (input, rules) = nom::multi::separated_list1(newline, parse_token_rule)(input)?;
+pub struct ProductionRule<'src> {
+    name: &'src str,
+    pattern: ProductionPattern,
+}
+
+pub struct EntryRule<'src> {
+    name: &'src str,
+}
+
+#[derive(Debug)]
+pub enum ProductionPattern {
+    Sequence { elements: Vec<ProductionPattern> },
+    Alternative { elements: Vec<ProductionPattern> },
+    OneOrMany { inner: Box<ProductionPattern> },
+    ZeroOrMany { inner: Box<ProductionPattern> },
+    Optional { inner: Box<ProductionPattern> },
+    Rule { rule_name: String },
+}
+
+fn parse_rule_name(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
+    let (input, name) = take_while1(|c: u8| Into::<char>::into(c).is_ascii_alphabetic())(input)?;
+    Ok((
+        input,
+        ProductionPattern::Rule {
+            rule_name: String::from_utf8(name.to_vec()).unwrap(),
+        },
+    ))
+}
+
+fn parse_production_group(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
+    let (input, _) = tag("(")(input)?;
+    let (input, mut seqs) = separated_list1(tag(" | "), parse_production_pattern)(input)?;
+    let (input, _) = tag(")")(input)?;
+    if seqs.len() == 1 {
+        Ok((input, seqs.remove(0)))
+    } else {
+        Ok((input, ProductionPattern::Alternative { elements: seqs }))
+    }
+}
+
+fn parse_production_element(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
+    alt((parse_production_group, parse_rule_name))(input)
+}
+
+fn parse_production_regex_repetition(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
+    let (input, inner) = parse_production_element(input)?;
+    let (input, rep_kind) = opt(alt((
+        map(tag("*"), |_| 0),
+        map(tag("+"), |_| 1),
+        map(tag("?"), |_| 2),
+    )))(input)?;
+    let pattern = if let Some(rep) = rep_kind {
+        match rep {
+            0 => ProductionPattern::ZeroOrMany {
+                inner: Box::new(inner),
+            },
+            1 => ProductionPattern::OneOrMany {
+                inner: Box::new(inner),
+            },
+            2 => ProductionPattern::Optional {
+                inner: Box::new(inner),
+            },
+            _ => unreachable!(),
+        }
+    } else {
+        inner
+    };
+    Ok((input, pattern))
+}
+
+fn parse_production_pattern(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
+    let (input, elements) = separated_list1(space1, parse_production_regex_repetition)(input)?;
+    Ok((input, ProductionPattern::Sequence { elements }))
+}
+
+fn parse_production_rule(input: &[u8]) -> IResult<&[u8], ProductionRule> {
+    let (input, _) = tag("prod")(input)?;
+    let (input, _) = space1(input)?;
+    let (input, name) = take_while1(|c: u8| Into::<char>::into(c).is_ascii_alphabetic())(input)?;
+    let (input, _) = space1(input)?;
+    let (input, _) = tag("=")(input)?;
+    let (input, _) = space1(input)?;
+    let (input, pattern) = parse_production_pattern(input)?;
+    let (input, _) = tag(";")(input)?;
+    Ok((
+        input,
+        ProductionRule {
+            name: std::str::from_utf8(name).unwrap(),
+            pattern,
+        },
+    ))
+}
+
+fn parse_entry_rule(input: &[u8]) -> IResult<&[u8], EntryRule> {
+    let (input, _) = tag("entry")(input)?;
+    let (input, _) = space1(input)?;
+    let (input, name) = take_while1(|c: u8| Into::<char>::into(c).is_ascii_alphabetic())(input)?;
+    let (input, _) = tag(";")(input)?;
+    Ok((
+        input,
+        EntryRule {
+            name: std::str::from_utf8(name).unwrap(),
+        },
+    ))
+}
+
+pub enum Rule<'src> {
+    TokenRule(TokenRule<'src>),
+    ProductionRule(ProductionRule<'src>),
+    EntryRule(EntryRule<'src>),
+}
+
+fn parse_rule(input: &[u8]) -> IResult<&[u8], Rule> {
+    alt((
+        map(parse_token_rule, |tr| Rule::TokenRule(tr)),
+        map(parse_production_rule, |pr| Rule::ProductionRule(pr)),
+        map(parse_entry_rule, |er| Rule::EntryRule(er)),
+    ))(input)
+}
+
+pub fn parse_lapex<'src>(input: &'src [u8]) -> IResult<&'src [u8], Vec<Rule<'src>>> {
+    let (input, rules) = nom::multi::separated_list1(many1(newline), parse_rule)(input)?;
     Ok((input, rules))
 }
