@@ -5,11 +5,11 @@ use nom::{
     bytes::complete::{tag, take, take_while1, take_while_m_n},
     character::complete::{newline, space1},
     combinator::{map, opt},
-    multi::many1,
+    multi::{many1, separated_list1},
     IResult,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Characters {
     Single(char),
     Range(char, char),
@@ -29,6 +29,9 @@ pub enum Pattern {
     ZeroOrMany {
         inner: Box<Pattern>,
     },
+    Optional {
+        inner: Box<Pattern>,
+    },
     CharSet {
         chars: Vec<Characters>,
         negated: bool,
@@ -44,10 +47,28 @@ pub struct TokenRule<'src> {
     pattern: Pattern,
 }
 
+impl<'src> TokenRule<'src> {
+    pub fn token(&self) -> &str {
+        self.name
+    }
+
+    pub fn pattern(&self) -> &Pattern {
+        &self.pattern
+    }
+}
+
 fn parse_char_unescpaed<'src>(input: &'src [u8]) -> IResult<&'src [u8], char> {
     let (input, ch) = take_while_m_n(1, 1, |c: u8| {
         let ch: char = c.into();
-        ch.is_ascii() && ch != ']' && ch != '/' && ch != '\\' && ch != ')'
+        ch.is_ascii()
+            && ch != ']'
+            && ch != '/'
+            && ch != '\\'
+            && ch != ')'
+            && ch != '|'
+            && ch != '+'
+            && ch != '*'
+            && ch != '?'
     })(input)?;
     let ch: char = ch[0].into();
     Ok((input, ch))
@@ -91,9 +112,13 @@ fn parse_char_set<'src>(input: &'src [u8]) -> IResult<&'src [u8], Pattern> {
 
 fn parse_regex_group(input: &[u8]) -> IResult<&[u8], Pattern> {
     let (input, _) = tag("(")(input)?;
-    let (input, seq) = parse_regex_sequence(input)?;
+    let (input, mut seqs) = separated_list1(tag("|"), parse_regex_sequence)(input)?;
     let (input, _) = tag(")")(input)?;
-    Ok((input, seq))
+    if seqs.len() == 1 {
+        Ok((input, seqs.remove(0)))
+    } else {
+        Ok((input, Pattern::Alternative { elements: seqs }))
+    }
 }
 
 fn parse_regex_element(input: &[u8]) -> IResult<&[u8], Pattern> {
@@ -108,13 +133,20 @@ fn parse_regex_element(input: &[u8]) -> IResult<&[u8], Pattern> {
 
 fn parse_regex_repetition(input: &[u8]) -> IResult<&[u8], Pattern> {
     let (input, inner) = parse_regex_element(input)?;
-    let (input, rep_kind) = opt(alt((map(tag("*"), |_| 0), map(tag("+"), |_| 1))))(input)?;
+    let (input, rep_kind) = opt(alt((
+        map(tag("*"), |_| 0),
+        map(tag("+"), |_| 1),
+        map(tag("?"), |_| 2),
+    )))(input)?;
     let pattern = if let Some(rep) = rep_kind {
         match rep {
             0 => Pattern::ZeroOrMany {
                 inner: Box::new(inner),
             },
             1 => Pattern::OneOrMany {
+                inner: Box::new(inner),
+            },
+            2 => Pattern::Optional {
                 inner: Box::new(inner),
             },
             _ => unreachable!(),
