@@ -78,6 +78,12 @@ fn parse_char_escaped<'src>(input: &'src [u8]) -> IResult<&'src [u8], char> {
     let (input, _) = tag("\\")(input)?;
     let (input, ch) = take(1_usize)(input)?;
     let ch: char = ch[0].into();
+    let ch = match ch {
+        'n' => '\n',
+        'r' => '\r',
+        't' => '\t',
+        c => c,
+    };
     Ok((input, ch))
 }
 

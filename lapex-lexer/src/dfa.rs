@@ -144,10 +144,10 @@ fn powerset_construction(
     dfa
 }
 
-pub fn generate_dfa(rules: Vec<TokenRule>) -> (Vec<RangeInclusive<u32>>, Graph<DfaState, usize>) {
-    let alpha = alphabet::generate_alphabet(&rules);
+pub fn generate_dfa(rules: &Vec<TokenRule>) -> (Vec<RangeInclusive<u32>>, Graph<DfaState, usize>) {
+    let alpha = alphabet::generate_alphabet(rules);
 
-    let (start, nfa) = nfa::generate_nfa(&alpha, &rules);
+    let (start, nfa) = nfa::generate_nfa(&alpha, rules);
 
     (alpha.to_ranges(), powerset_construction(&nfa, start))
 }
