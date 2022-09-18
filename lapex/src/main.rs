@@ -23,12 +23,15 @@ fn main() {
     let _entry_rule = entry_rules.remove(0); //TODO use
     let (alphabet, dfa) = lapex_lexer::generate_dfa(&token_rules);
 
-    if lapex_lexer::CppLexerCodeGen::has_header() {
+    let cpp_codegen = lapex_lexer::CppLexerCodeGen::new();
+    if cpp_codegen.has_header() {
         let mut lexer_h = std::fs::File::create("lexer.h").unwrap();
-        lapex_lexer::CppLexerCodeGen::generate_header(&token_rules, &alphabet, &dfa, &mut lexer_h)
+        cpp_codegen
+            .generate_header(&token_rules, &alphabet, &dfa, &mut lexer_h)
             .unwrap();
     }
     let mut lexer_cpp = std::fs::File::create("lexer.cpp").unwrap();
-    lapex_lexer::CppLexerCodeGen::generate_source(&token_rules, &alphabet, &dfa, &mut lexer_cpp)
+    cpp_codegen
+        .generate_source(&token_rules, &alphabet, &dfa, &mut lexer_cpp)
         .unwrap();
 }

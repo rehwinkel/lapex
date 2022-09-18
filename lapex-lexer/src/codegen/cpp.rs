@@ -10,9 +10,13 @@ use crate::dfa::DfaState;
 
 use super::LexerCodeGen;
 
-pub struct CppLexerCodeGen;
+pub struct CppLexerCodeGen {}
 
 impl CppLexerCodeGen {
+    pub fn new() -> Self {
+        CppLexerCodeGen {}
+    }
+
     fn write_token_enum<W: Write>(
         rules: &Vec<TokenRule>,
         output: &mut W,
@@ -108,6 +112,7 @@ impl CppLexerCodeGen {
 
 impl LexerCodeGen for CppLexerCodeGen {
     fn generate_header<W: std::io::Write>(
+        &self,
         rules: &Vec<TokenRule>,
         _alphabet: &Vec<std::ops::RangeInclusive<u32>>,
         _dfa: &petgraph::Graph<crate::dfa::DfaState, usize>,
@@ -125,11 +130,12 @@ impl LexerCodeGen for CppLexerCodeGen {
         writeln!(output, "}}")
     }
 
-    fn has_header() -> bool {
+    fn has_header(&self) -> bool {
         true
     }
 
     fn generate_source<W: Write>(
+        &self,
         _rules: &Vec<TokenRule>,
         alphabet: &Vec<std::ops::RangeInclusive<u32>>,
         dfa: &petgraph::Graph<crate::dfa::DfaState, usize>,

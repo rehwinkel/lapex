@@ -8,9 +8,10 @@ use petgraph::Graph;
 use crate::dfa::DfaState;
 
 pub trait LexerCodeGen {
-    fn has_header() -> bool;
+    fn has_header(&self) -> bool;
 
     fn generate_header<W: Write>(
+        &self,
         rules: &Vec<TokenRule>,
         alphabet: &Vec<RangeInclusive<u32>>,
         dfa: &Graph<DfaState, usize>,
@@ -18,6 +19,7 @@ pub trait LexerCodeGen {
     ) -> Result<(), std::io::Error>;
 
     fn generate_source<W: Write>(
+        &self,
         rules: &Vec<TokenRule>,
         alphabet: &Vec<RangeInclusive<u32>>,
         dfa: &Graph<DfaState, usize>,
