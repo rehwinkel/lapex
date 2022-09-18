@@ -57,7 +57,7 @@ impl<'src> TokenRule<'src> {
     }
 }
 
-fn parse_char_unescpaed<'src>(input: &'src [u8]) -> IResult<&'src [u8], char> {
+fn parse_char_unescpaed(input: &[u8]) -> IResult<&[u8], char> {
     let (input, ch) = take_while_m_n(1, 1, |c: u8| {
         let ch: char = c.into();
         ch.is_ascii()
@@ -74,7 +74,7 @@ fn parse_char_unescpaed<'src>(input: &'src [u8]) -> IResult<&'src [u8], char> {
     Ok((input, ch))
 }
 
-fn parse_char_escaped<'src>(input: &'src [u8]) -> IResult<&'src [u8], char> {
+fn parse_char_escaped(input: &[u8]) -> IResult<&[u8], char> {
     let (input, _) = tag("\\")(input)?;
     let (input, ch) = take(1_usize)(input)?;
     let ch: char = ch[0].into();
@@ -87,18 +87,18 @@ fn parse_char_escaped<'src>(input: &'src [u8]) -> IResult<&'src [u8], char> {
     Ok((input, ch))
 }
 
-fn parse_char<'src>(input: &'src [u8]) -> IResult<&'src [u8], char> {
+fn parse_char(input: &[u8]) -> IResult<&[u8], char> {
     alt((parse_char_unescpaed, parse_char_escaped))(input)
 }
 
-fn parse_char_range<'src>(input: &'src [u8]) -> IResult<&'src [u8], Range<char>> {
+fn parse_char_range(input: &[u8]) -> IResult<&[u8], Range<char>> {
     let (input, c1) = parse_char(input)?;
     let (input, _) = tag("-")(input)?;
     let (input, c2) = parse_char(input)?;
     Ok((input, c1..c2))
 }
 
-fn parse_char_or_range<'src>(input: &'src [u8]) -> IResult<&'src [u8], Characters> {
+fn parse_char_or_range(input: &[u8]) -> IResult<&[u8], Characters> {
     alt((
         map(parse_char_range, |range| {
             Characters::Range(range.start, range.end)
@@ -107,7 +107,7 @@ fn parse_char_or_range<'src>(input: &'src [u8]) -> IResult<&'src [u8], Character
     ))(input)
 }
 
-fn parse_char_set<'src>(input: &'src [u8]) -> IResult<&'src [u8], Pattern> {
+fn parse_char_set(input: &[u8]) -> IResult<&[u8], Pattern> {
     let (input, _) = tag("[")(input)?;
     let (input, negation_res) = opt(tag("^"))(input)?;
     let negated = negation_res.is_some();
@@ -168,14 +168,14 @@ fn parse_regex_sequence(input: &[u8]) -> IResult<&[u8], Pattern> {
     Ok((input, Pattern::Sequence { elements }))
 }
 
-fn parse_regex_pattern<'src>(input: &'src [u8]) -> IResult<&'src [u8], Pattern> {
+fn parse_regex_pattern(input: &[u8]) -> IResult<&[u8], Pattern> {
     let (input, _) = tag("/")(input)?;
     let (input, seq) = parse_regex_sequence(input)?;
     let (input, _) = tag("/")(input)?;
     Ok((input, seq))
 }
 
-fn parse_literal_pattern<'src>(input: &'src [u8]) -> IResult<&'src [u8], Pattern> {
+fn parse_literal_pattern(input: &[u8]) -> IResult<&[u8], Pattern> {
     let (input, _) = tag("\"")(input)?;
     let (input, chars) = take_while1(|c| {
         let ch = Into::<char>::into(c);
@@ -192,12 +192,12 @@ fn parse_literal_pattern<'src>(input: &'src [u8]) -> IResult<&'src [u8], Pattern
     Ok((input, Pattern::Sequence { elements: patterns }))
 }
 
-fn parse_pattern<'src>(input: &'src [u8]) -> IResult<&'src [u8], Pattern> {
+fn parse_pattern(input: &[u8]) -> IResult<&[u8], Pattern> {
     let (input, pattern) = alt((parse_literal_pattern, parse_regex_pattern))(input)?;
     Ok((input, pattern))
 }
 
-fn parse_token_rule<'src>(input: &'src [u8]) -> IResult<&'src [u8], TokenRule> {
+fn parse_token_rule(input: &[u8]) -> IResult<&[u8], TokenRule> {
     let (input, _) = tag("token")(input)?;
     let (input, _) = space1(input)?;
     let (input, name) = take_while1(|c: u8| Into::<char>::into(c).is_ascii_alphabetic())(input)?;
@@ -329,13 +329,13 @@ pub enum Rule<'src> {
 
 fn parse_rule(input: &[u8]) -> IResult<&[u8], Rule> {
     alt((
-        map(parse_token_rule, |tr| Rule::TokenRule(tr)),
-        map(parse_production_rule, |pr| Rule::ProductionRule(pr)),
-        map(parse_entry_rule, |er| Rule::EntryRule(er)),
+        map(parse_token_rule, Rule::TokenRule),
+        map(parse_production_rule, Rule::ProductionRule),
+        map(parse_entry_rule, Rule::EntryRule),
     ))(input)
 }
 
-pub fn parse_lapex<'src>(input: &'src [u8]) -> IResult<&'src [u8], Vec<Rule<'src>>> {
+pub fn parse_lapex(input: &[u8]) -> IResult<&[u8], Vec<Rule>> {
     let (input, rules) = nom::multi::separated_list1(many1(newline), parse_rule)(input)?;
     Ok((input, rules))
 }

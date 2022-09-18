@@ -24,7 +24,7 @@ impl Alphabet {
         }
     }
 
-    pub fn to_ranges(self) -> Vec<RangeInclusive<u32>> {
+    pub fn into_ranges(self) -> Vec<RangeInclusive<u32>> {
         self.ranges
     }
 
@@ -76,7 +76,7 @@ fn get_chars_from_pattern(chars: &mut BTreeSet<char>, pattern: &Pattern) {
     }
 }
 
-pub fn generate_alphabet(rules: &Vec<TokenRule>) -> Alphabet {
+pub fn generate_alphabet(rules: &[TokenRule]) -> Alphabet {
     let mut chars = BTreeSet::new();
     for rule in rules {
         get_chars_from_pattern(&mut chars, rule.pattern())

@@ -33,7 +33,7 @@ fn add_powerset_to_dfa(
     nodes: Vec<NodeIndex>,
 ) -> NodeIndex {
     let mut closure = HashSet::new(); // TODO: test perf of different data structures
-    epsilon_closure(&nfa, nodes, &mut closure);
+    epsilon_closure(nfa, nodes, &mut closure);
 
     // find an existing node with the same powerset
     let node_dfa_opt: Option<NodeIndex> = dfa
@@ -94,11 +94,8 @@ fn convert_powerset_to_dfa(
     let powerset = powerset_dfa.node_weight(node).unwrap();
     for nfa_index in powerset {
         let state = nfa.node_weight(*nfa_index);
-        match state {
-            Some(NfaState::Final { token }) => {
-                accepts.push(token.clone());
-            }
-            _ => (),
+        if let Some(NfaState::Final { token }) = state {
+            accepts.push(token.clone());
         }
     }
     let start = if !accepts.is_empty() {
@@ -144,10 +141,10 @@ fn powerset_construction(
     dfa
 }
 
-pub fn generate_dfa(rules: &Vec<TokenRule>) -> (Vec<RangeInclusive<u32>>, Graph<DfaState, usize>) {
+pub fn generate_dfa(rules: &[TokenRule]) -> (Vec<RangeInclusive<u32>>, Graph<DfaState, usize>) {
     let alpha = alphabet::generate_alphabet(rules);
 
     let (start, nfa) = nfa::generate_nfa(&alpha, rules);
 
-    (alpha.to_ranges(), powerset_construction(&nfa, start))
+    (alpha.into_ranges(), powerset_construction(&nfa, start))
 }

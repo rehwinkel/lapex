@@ -12,16 +12,16 @@ pub trait LexerCodeGen {
 
     fn generate_header<W: Write>(
         &self,
-        rules: &Vec<TokenRule>,
-        alphabet: &Vec<RangeInclusive<u32>>,
+        rules: &[TokenRule],
+        alphabet: &[RangeInclusive<u32>],
         dfa: &Graph<DfaState, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error>;
 
     fn generate_source<W: Write>(
         &self,
-        rules: &Vec<TokenRule>,
-        alphabet: &Vec<RangeInclusive<u32>>,
+        rules: &[TokenRule],
+        alphabet: &[RangeInclusive<u32>],
         dfa: &Graph<DfaState, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error>;

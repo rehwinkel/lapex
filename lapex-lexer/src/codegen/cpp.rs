@@ -12,13 +12,19 @@ use super::LexerCodeGen;
 
 pub struct CppLexerCodeGen {}
 
+impl Default for CppLexerCodeGen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CppLexerCodeGen {
     pub fn new() -> Self {
         CppLexerCodeGen {}
     }
 
     fn write_token_enum<W: Write>(
-        rules: &Vec<TokenRule>,
+        rules: &[TokenRule],
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         writeln!(output, "enum class TokenType")?;
@@ -51,7 +57,7 @@ impl CppLexerCodeGen {
     }
 
     fn write_alphabet_switch<W: Write>(
-        alphabet: &Vec<RangeInclusive<u32>>,
+        alphabet: &[RangeInclusive<u32>],
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         writeln!(output, "uint32_t i;")?;
@@ -113,8 +119,8 @@ impl CppLexerCodeGen {
 impl LexerCodeGen for CppLexerCodeGen {
     fn generate_header<W: std::io::Write>(
         &self,
-        rules: &Vec<TokenRule>,
-        _alphabet: &Vec<std::ops::RangeInclusive<u32>>,
+        rules: &[TokenRule],
+        _alphabet: &[std::ops::RangeInclusive<u32>],
         _dfa: &petgraph::Graph<crate::dfa::DfaState, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
@@ -136,8 +142,8 @@ impl LexerCodeGen for CppLexerCodeGen {
 
     fn generate_source<W: Write>(
         &self,
-        _rules: &Vec<TokenRule>,
-        alphabet: &Vec<std::ops::RangeInclusive<u32>>,
+        _rules: &[TokenRule],
+        alphabet: &[std::ops::RangeInclusive<u32>],
         dfa: &petgraph::Graph<crate::dfa::DfaState, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {

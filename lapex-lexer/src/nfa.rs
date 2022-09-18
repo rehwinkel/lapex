@@ -70,7 +70,7 @@ fn build_nfa_from_pattern(
 ) -> Option<()> {
     match &pattern {
         Pattern::Sequence { elements } => {
-            if elements.len() > 0 {
+            if !elements.is_empty() {
                 let mut start = start;
                 for pat in &elements[..elements.len() - 1] {
                     let end = nfa.add_tmp();
@@ -165,7 +165,7 @@ fn build_nfa_from_pattern(
 
 pub fn generate_nfa(
     alpha: &Alphabet,
-    rules: &Vec<TokenRule>,
+    rules: &[TokenRule],
 ) -> (NodeIndex, Graph<NfaState, NfaEdge>) {
     let mut nfa = Nfa {
         graph: DiGraph::new(),
