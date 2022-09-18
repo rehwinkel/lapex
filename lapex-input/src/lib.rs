@@ -57,7 +57,7 @@ impl<'src> TokenRule<'src> {
     }
 }
 
-fn parse_char_unescpaed(input: &[u8]) -> IResult<&[u8], char> {
+fn parse_char_unescaped(input: &[u8]) -> IResult<&[u8], char> {
     let (input, ch) = take_while_m_n(1, 1, |c: u8| {
         let ch: char = c.into();
         ch.is_ascii()
@@ -69,6 +69,9 @@ fn parse_char_unescpaed(input: &[u8]) -> IResult<&[u8], char> {
             && ch != '+'
             && ch != '*'
             && ch != '?'
+            && ch != '\t'
+            && ch != '\r'
+            && ch != '\n'
     })(input)?;
     let ch: char = ch[0].into();
     Ok((input, ch))
@@ -82,13 +85,37 @@ fn parse_char_escaped(input: &[u8]) -> IResult<&[u8], char> {
         'n' => '\n',
         'r' => '\r',
         't' => '\t',
-        c => c,
+        'u' => {
+            let (input, _) = tag("{")(input)?;
+            let (input, code) = take_while_m_n(4, 6, |ch: u8| {
+                let ch = Into::<char>::into(ch);
+                ('0'..='9').contains(&ch) || ('a'..='f').contains(&ch) || ('A'..='F').contains(&ch)
+            })(input)?;
+            let (input, _) = tag("}")(input)?;
+            if let Ok(code_str) = std::str::from_utf8(code) {
+                if let Ok(codepoint) = u32::from_str_radix(code_str, 16) {
+                    if let Some(ch) = std::char::from_u32(codepoint) {
+                        return Ok((input, ch));
+                    }
+                }
+            }
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Tag,
+            )));
+        }
+        _ => {
+            return Err(nom::Err::Error(nom::error::Error::new(
+                input,
+                nom::error::ErrorKind::Tag,
+            )))
+        }
     };
     Ok((input, ch))
 }
 
 fn parse_char(input: &[u8]) -> IResult<&[u8], char> {
-    alt((parse_char_unescpaed, parse_char_escaped))(input)
+    alt((parse_char_unescaped, parse_char_escaped))(input)
 }
 
 fn parse_char_range(input: &[u8]) -> IResult<&[u8], Range<char>> {
@@ -339,3 +366,6 @@ pub fn parse_lapex(input: &[u8]) -> IResult<&[u8], Vec<Rule>> {
     let (input, rules) = nom::multi::separated_list1(many1(newline), parse_rule)(input)?;
     Ok((input, rules))
 }
+
+#[cfg(test)]
+mod tests;
