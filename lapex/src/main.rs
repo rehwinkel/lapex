@@ -23,7 +23,6 @@ fn main() {
     let entry_rule = entry_rules.remove(0);
     let (_alphabet, _dfa) = lapex_lexer::generate_dfa(&token_rules);
     let parser_table = lapex_parser::generate_table(&entry_rule, &token_rules, &prod_rules);
-    // TODO: missing nonterminals and terminals (name mapping hashmap?)
     println!("{:?}", parser_table.debug(&token_rules, &prod_rules));
 
     /*
