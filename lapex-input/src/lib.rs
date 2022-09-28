@@ -242,13 +242,31 @@ fn parse_token_rule(input: &[u8]) -> IResult<&[u8], TokenRule> {
     ))
 }
 
+#[derive(Debug)]
 pub struct ProductionRule<'src> {
     name: &'src str,
     pattern: ProductionPattern,
 }
 
+impl<'src> ProductionRule<'src> {
+    pub fn name(&self) -> &str {
+        self.name
+    }
+
+    pub fn pattern(&self) -> &ProductionPattern {
+        &self.pattern
+    }
+}
+
+#[derive(Debug)]
 pub struct EntryRule<'src> {
     name: &'src str,
+}
+
+impl<'src> EntryRule<'src> {
+    pub fn name(&self) -> &str {
+        self.name
+    }
 }
 
 #[derive(Debug)]
