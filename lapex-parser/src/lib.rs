@@ -251,6 +251,7 @@ fn follow(rule: Symbol, entry: &Symbol, bnf_rules: &Vec<BnfRule>) -> HashSet<Sym
                     follow_set.extend(follow(bnf_rule.symbol.clone(), entry, bnf_rules));
                 }
             } else {
+                println!("{:?} ({:?}) {:?}", rule, entry, &bnf_rule.symbol);
                 follow_set.extend(follow(bnf_rule.symbol.clone(), entry, bnf_rules));
             }
         }
@@ -449,6 +450,52 @@ impl<'bnf> ParserTableBuilder<'bnf> {
     }
 }
 
+fn optimize_bnf(rules: Vec<BnfRule>, entry: &Symbol) -> Vec<BnfRule> {
+    let mut occurences: HashMap<&Symbol, usize> = HashMap::new();
+    for rule in &rules {
+        occurences
+            .entry(&rule.symbol)
+            .and_modify(|v| *v += 1)
+            .or_insert(1);
+    }
+    let mut mappings = HashMap::new();
+    for (symbol, _) in occurences.iter().filter(|(_, v)| **v == 1) {
+        let mut mapping: Option<(Symbol, Symbol)> = None;
+        let mut mapping_set = false;
+        for rule in rules.iter().filter(|rule| &&rule.symbol == symbol) {
+            if rule.produces.len() == 1 {
+                if !mapping_set {
+                    mapping = Some(((*symbol).clone(), rule.produces[0].clone()));
+                    mapping_set = true;
+                }
+            }
+        }
+        mapping.map(|(key, value)| mappings.insert(key, value));
+    }
+    let mut used = vec![entry.clone()];
+    let rules: Vec<BnfRule> = rules
+        .into_iter()
+        .map(|rule| BnfRule {
+            symbol: rule.symbol,
+            produces: rule
+                .produces
+                .into_iter()
+                .map(|mut sym| {
+                    while let Some(s) = mappings.get(&sym) {
+                        sym = s.clone();
+                    }
+                    used.push(sym.clone());
+                    sym
+                })
+                .collect(),
+        })
+        .collect();
+    rules
+        .into_iter()
+        .filter(|rule| used.contains(&&rule.symbol))
+        .collect()
+}
+
 pub fn generate_table(
     entry: &EntryRule,
     tokens: &[TokenRule],
@@ -473,6 +520,8 @@ pub fn generate_table(
         .find(|(_, it)| entry.name() == it.name())
         .map(|(i, _)| Symbol::NonTerminalRule { rule_index: i })
         .expect("entry symbol must be a valid rule"); // TODO return result
+
+    let bnf_rules = optimize_bnf(bnf_rules, &entry_symbol);
 
     let mut parser_table = ParserTable::builder(tokens, &bnf_rules);
     for bnf_rule in &bnf_rules {
