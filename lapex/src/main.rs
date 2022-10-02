@@ -26,6 +26,7 @@ fn main() {
     println!("{:?}", parser_table.debug(&token_rules, &prod_rules));
 
     /*
+    let (alphabet, dfa) = lapex_lexer::generate_dfa(&token_rules);
     let cpp_codegen = lapex_lexer::CppLexerCodeGen::new();
     if cpp_codegen.has_header() {
         let mut lexer_h = std::fs::File::create("lexer.h").unwrap();
@@ -37,5 +38,5 @@ fn main() {
     cpp_codegen
         .generate_source(&token_rules, &alphabet, &dfa, &mut lexer_cpp)
         .unwrap();
-        */
+    */
 }

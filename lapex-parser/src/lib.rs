@@ -1,186 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
-    hash::Hash,
 };
 
-use lapex_input::{EntryRule, ProductionPattern, ProductionRule, TokenRule};
+use lapex_input::{EntryRule, ProductionRule, TokenRule};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Symbol {
-    NonTerminal { index: usize },
-    NonTerminalRule { rule_index: usize },
-    Terminal { token: usize },
-    Epsilon,
-    End,
-}
+mod bnf;
+use bnf::{Bnf, Symbol};
 
-fn build_bnf_from_pattern<'pr>(
-    tmp_id: &mut usize,
-    bnf_rules: &mut Vec<BnfRule>,
-    production: &mut Vec<Symbol>,
-    terminals: &[TokenRule],
-    nonterminals: &[ProductionRule],
-    pattern: &'pr ProductionPattern,
-) {
-    match pattern {
-        lapex_input::ProductionPattern::Sequence { elements } => {
-            for elem in elements {
-                build_bnf_from_pattern(
-                    tmp_id,
-                    bnf_rules,
-                    production,
-                    terminals,
-                    nonterminals,
-                    elem,
-                );
-            }
-        }
-        lapex_input::ProductionPattern::Alternative { elements } => {
-            *tmp_id += 1;
-            let index = *tmp_id;
-            for elem in elements {
-                build_bnf_rule(
-                    tmp_id,
-                    bnf_rules,
-                    terminals,
-                    nonterminals,
-                    Symbol::NonTerminal { index },
-                    Some(elem),
-                )
-            }
-            production.push(Symbol::NonTerminal { index });
-        }
-        lapex_input::ProductionPattern::OneOrMany { inner } => {
-            *tmp_id += 1;
-            let inner_index = *tmp_id;
-            build_bnf_rule(
-                tmp_id,
-                bnf_rules,
-                terminals,
-                nonterminals,
-                Symbol::NonTerminal { index: inner_index },
-                Some(inner),
-            );
-            *tmp_id += 1;
-            let index = *tmp_id;
-            bnf_rules.push(BnfRule {
-                symbol: Symbol::NonTerminal { index },
-                produces: vec![Symbol::NonTerminal { index: inner_index }],
-            });
-            bnf_rules.push(BnfRule {
-                symbol: Symbol::NonTerminal { index },
-                produces: vec![
-                    Symbol::NonTerminal { index: inner_index },
-                    Symbol::NonTerminal { index },
-                ],
-            });
-            production.push(Symbol::NonTerminal { index });
-        }
-        lapex_input::ProductionPattern::ZeroOrMany { inner } => {
-            *tmp_id += 1;
-            let inner_index = *tmp_id;
-            build_bnf_rule(
-                tmp_id,
-                bnf_rules,
-                terminals,
-                nonterminals,
-                Symbol::NonTerminal { index: inner_index },
-                Some(inner),
-            );
-            *tmp_id += 1;
-            let index = *tmp_id;
-            bnf_rules.push(BnfRule {
-                symbol: Symbol::NonTerminal { index },
-                produces: vec![Symbol::Epsilon],
-            });
-            bnf_rules.push(BnfRule {
-                symbol: Symbol::NonTerminal { index },
-                produces: vec![
-                    Symbol::NonTerminal { index: inner_index },
-                    Symbol::NonTerminal { index },
-                ],
-            });
-            production.push(Symbol::NonTerminal { index });
-        }
-        lapex_input::ProductionPattern::Optional { inner } => {
-            *tmp_id += 1;
-            let index = *tmp_id;
-            build_bnf_rule(
-                tmp_id,
-                bnf_rules,
-                terminals,
-                nonterminals,
-                Symbol::NonTerminal { index },
-                Some(inner),
-            );
-            build_bnf_rule(
-                tmp_id,
-                bnf_rules,
-                terminals,
-                nonterminals,
-                Symbol::NonTerminal { index },
-                None,
-            );
-            production.push(Symbol::NonTerminal { index });
-        }
-        lapex_input::ProductionPattern::Rule { rule_name } => {
-            let terminal_index = terminals
-                .iter()
-                .position(|tr| tr.token() == rule_name.as_str());
-            let sym = if let Some(index) = terminal_index {
-                Symbol::Terminal { token: index }
-            } else {
-                let nonterminal_index = nonterminals
-                    .iter()
-                    .position(|tr| tr.name() == rule_name.as_str());
-                if let Some(index) = nonterminal_index {
-                    Symbol::NonTerminalRule { rule_index: index }
-                } else {
-                    panic!("neither nonterm nor term!!")
-                }
-            };
-            production.push(sym);
-        }
-    }
-}
-
-#[derive(Debug)]
-struct BnfRule {
-    symbol: Symbol,
-    produces: Vec<Symbol>,
-}
-
-impl BnfRule {}
-
-fn build_bnf_rule<'pr>(
-    tmp_id: &mut usize,
-    bnf_rules: &mut Vec<BnfRule>,
-    terminals: &[TokenRule],
-    nonterminals: &[ProductionRule],
-    name: Symbol,
-    pattern: Option<&'pr ProductionPattern>,
-) {
-    let mut seq = Vec::new();
-    if let Some(pattern) = pattern {
-        build_bnf_from_pattern(
-            tmp_id,
-            bnf_rules,
-            &mut seq,
-            terminals,
-            nonterminals,
-            pattern,
-        );
-    } else {
-        seq.push(Symbol::Epsilon);
-    }
-    bnf_rules.push(BnfRule {
-        symbol: name,
-        produces: seq,
-    });
-}
-
-fn first(rule: Symbol, bnf_rules: &Vec<BnfRule>) -> HashSet<Symbol> {
+fn first(rule: Symbol, bnf: &Bnf) -> HashSet<Symbol> {
     match rule {
         Symbol::Terminal { token: _ } | Symbol::Epsilon => {
             let mut set = HashSet::new();
@@ -190,10 +18,10 @@ fn first(rule: Symbol, bnf_rules: &Vec<BnfRule>) -> HashSet<Symbol> {
         _ => (),
     }
     let mut set = HashSet::new();
-    for bnf_rule in bnf_rules {
-        if bnf_rule.symbol == rule {
+    for bnf_rule in bnf.iter() {
+        if bnf_rule.lhs() == &rule {
             let mut all_contain_epsilon = true;
-            for symbol in &bnf_rule.produces {
+            for symbol in bnf_rule.rhs() {
                 match symbol {
                     Symbol::Terminal { token: _ } | Symbol::Epsilon => {
                         set.insert(symbol.clone());
@@ -201,7 +29,7 @@ fn first(rule: Symbol, bnf_rules: &Vec<BnfRule>) -> HashSet<Symbol> {
                         break;
                     }
                     _ => {
-                        let mut first_of_symbol = first(symbol.clone(), bnf_rules);
+                        let mut first_of_symbol = first(symbol.clone(), bnf);
                         if first_of_symbol.contains(&Symbol::Epsilon) {
                             first_of_symbol.remove(&Symbol::Epsilon);
                         } else {
@@ -219,25 +47,25 @@ fn first(rule: Symbol, bnf_rules: &Vec<BnfRule>) -> HashSet<Symbol> {
     set
 }
 
-fn follow(rule: Symbol, entry: &Symbol, bnf_rules: &Vec<BnfRule>) -> HashSet<Symbol> {
+fn follow(rule: Symbol, entry: &Symbol, bnf: &Bnf) -> HashSet<Symbol> {
     if &rule == entry {
         let mut follow_set = HashSet::new();
         follow_set.insert(Symbol::End);
         return follow_set;
     }
     let mut follow_set = HashSet::new();
-    for bnf_rule in bnf_rules {
+    for bnf_rule in bnf.iter() {
         let indices = bnf_rule
-            .produces
+            .rhs()
             .iter()
             .enumerate()
             .filter_map(|(i, it)| (it == &rule).then(|| i));
         for i in indices {
-            let tail = &bnf_rule.produces[i + 1..];
+            let tail = &bnf_rule.rhs()[i + 1..];
             if tail.len() > 0 {
                 let mut all_contain_epsilon = true;
                 for tail_symbol in tail {
-                    let mut tail_symbol_first = first(tail_symbol.clone(), bnf_rules);
+                    let mut tail_symbol_first = first(tail_symbol.clone(), bnf);
                     if tail_symbol_first.contains(&Symbol::Epsilon) {
                         tail_symbol_first.remove(&Symbol::Epsilon);
                         follow_set.extend(tail_symbol_first);
@@ -248,11 +76,16 @@ fn follow(rule: Symbol, entry: &Symbol, bnf_rules: &Vec<BnfRule>) -> HashSet<Sym
                     }
                 }
                 if all_contain_epsilon {
-                    follow_set.extend(follow(bnf_rule.symbol.clone(), entry, bnf_rules));
+                    follow_set.extend(follow(bnf_rule.lhs().clone(), entry, bnf));
                 }
             } else {
-                println!("{:?} ({:?}) {:?}", rule, entry, &bnf_rule.symbol);
-                follow_set.extend(follow(bnf_rule.symbol.clone(), entry, bnf_rules));
+                if &rule != bnf_rule.lhs() {
+                    follow_set.extend(follow(bnf_rule.lhs().clone(), entry, bnf));
+                } else {
+                    let mut parent_first = first(bnf_rule.lhs().clone(), bnf);
+                    parent_first.remove(&Symbol::Epsilon);
+                    follow_set.extend(parent_first);
+                }
             }
         }
     }
@@ -278,9 +111,8 @@ pub struct ParserTable {
 }
 
 impl ParserTable {
-    fn builder<'bnf>(tokens: &[TokenRule], bnf_rules: &'bnf [BnfRule]) -> ParserTableBuilder<'bnf> {
-        let unique_symbols: HashSet<Symbol> =
-            bnf_rules.iter().map(|rule| rule.symbol.clone()).collect();
+    fn builder<'bnf>(tokens: &[TokenRule], bnf: &'bnf Bnf) -> ParserTableBuilder<'bnf> {
+        let unique_symbols: HashSet<Symbol> = bnf.iter().map(|rule| rule.lhs().clone()).collect();
         let (named_nonterms, unnamed_nonterms): (Vec<Symbol>, Vec<Symbol>) =
             unique_symbols.into_iter().partition(|symbol| {
                 if let Symbol::NonTerminalRule { rule_index: _ } = symbol {
@@ -336,7 +168,7 @@ impl<'src> Debug for ParserTableDebug<'src> {
                             )
                         }
                     }))
-                    .chain((1..=self.table.nonterms_count).into_iter().map(|j| {
+                    .chain((0..self.table.nonterms_count).into_iter().map(|j| {
                         if i == 0 {
                             format!("nt{}", j)
                         } else if i - 1 == self.tokens.len() {
@@ -386,7 +218,7 @@ impl ParserTable {
     fn get(&self, nonterminal: Symbol, lookahead: Symbol) -> Option<&Vec<Symbol>> {
         let row_index = match nonterminal {
             Symbol::NonTerminalRule { rule_index: i } => i,
-            Symbol::NonTerminal { index: i } => self.rules_count + i - 1,
+            Symbol::NonTerminal { index: i } => self.rules_count + i,
             _ => unreachable!(),
         };
         let col_index = match lookahead {
@@ -403,6 +235,10 @@ impl ParserTable {
 
 impl<'bnf> ParserTableBuilder<'bnf> {
     fn insert(&mut self, nonterminal: Symbol, lookahead: Symbol, production: &'bnf Vec<Symbol>) {
+        println!(
+            "table {:?} (L: {:?}) => {:?}",
+            &nonterminal, &lookahead, &production
+        );
         assert!(match lookahead {
             Symbol::Terminal { token: _ } | Symbol::End => true,
             _ => false,
@@ -414,7 +250,7 @@ impl<'bnf> ParserTableBuilder<'bnf> {
 
         let row_index = match nonterminal {
             Symbol::NonTerminalRule { rule_index: i } => i,
-            Symbol::NonTerminal { index: i } => self.rules_count + i - 1,
+            Symbol::NonTerminal { index: i } => self.rules_count + i,
             _ => unreachable!(),
         };
         let col_index = match lookahead {
@@ -450,97 +286,41 @@ impl<'bnf> ParserTableBuilder<'bnf> {
     }
 }
 
-fn optimize_bnf(rules: Vec<BnfRule>, entry: &Symbol) -> Vec<BnfRule> {
-    let mut occurences: HashMap<&Symbol, usize> = HashMap::new();
-    for rule in &rules {
-        occurences
-            .entry(&rule.symbol)
-            .and_modify(|v| *v += 1)
-            .or_insert(1);
-    }
-    let mut mappings = HashMap::new();
-    for (symbol, _) in occurences.iter().filter(|(_, v)| **v == 1) {
-        let mut mapping: Option<(Symbol, Symbol)> = None;
-        let mut mapping_set = false;
-        for rule in rules.iter().filter(|rule| &&rule.symbol == symbol) {
-            if rule.produces.len() == 1 {
-                if !mapping_set {
-                    mapping = Some(((*symbol).clone(), rule.produces[0].clone()));
-                    mapping_set = true;
-                }
-            }
-        }
-        mapping.map(|(key, value)| mappings.insert(key, value));
-    }
-    let mut used = vec![entry.clone()];
-    let rules: Vec<BnfRule> = rules
-        .into_iter()
-        .map(|rule| BnfRule {
-            symbol: rule.symbol,
-            produces: rule
-                .produces
-                .into_iter()
-                .map(|mut sym| {
-                    while let Some(s) = mappings.get(&sym) {
-                        sym = s.clone();
-                    }
-                    used.push(sym.clone());
-                    sym
-                })
-                .collect(),
-        })
-        .collect();
-    rules
-        .into_iter()
-        .filter(|rule| used.contains(&&rule.symbol))
-        .collect()
-}
-
 pub fn generate_table(
     entry: &EntryRule,
     tokens: &[TokenRule],
     rules: &[ProductionRule],
 ) -> ParserTable {
-    let mut bnf_rules = Vec::new();
-    let mut tmp_id = 0;
-    for (i, rule) in rules.iter().enumerate() {
-        build_bnf_rule(
-            &mut tmp_id,
-            &mut bnf_rules,
-            tokens,
-            rules,
-            Symbol::NonTerminalRule { rule_index: i },
-            Some(rule.pattern()),
-        )
-    }
-
     let entry_symbol = rules
         .iter()
         .enumerate()
         .find(|(_, it)| entry.name() == it.name())
         .map(|(i, _)| Symbol::NonTerminalRule { rule_index: i })
         .expect("entry symbol must be a valid rule"); // TODO return result
+    let bnf = bnf::build_bnf(tokens, rules).optimize_bnf(&entry_symbol);
 
-    let bnf_rules = optimize_bnf(bnf_rules, &entry_symbol);
+    println!("{:?}", bnf);
 
-    let mut parser_table = ParserTable::builder(tokens, &bnf_rules);
-    for bnf_rule in &bnf_rules {
-        let first_symbols = first(bnf_rule.produces[0].clone(), &bnf_rules);
+    let mut parser_table = ParserTable::builder(tokens, &bnf);
+    for bnf_rule in bnf.iter() {
+        let first_symbols = first(bnf_rule.rhs()[0].clone(), &bnf);
+        println!("first {:?} -> {:?}", &bnf_rule.lhs(), &first_symbols);
         if first_symbols.contains(&Symbol::Epsilon) {
-            let follow_symbols = follow(bnf_rule.symbol.clone(), &entry_symbol, &bnf_rules);
-            if follow_symbols.contains(&Symbol::End) {
-                parser_table.insert(bnf_rule.symbol.clone(), Symbol::End, &bnf_rule.produces);
-            } else {
-                for sym in follow_symbols {
-                    if sym != Symbol::End {
-                        parser_table.insert(bnf_rule.symbol.clone(), sym, &bnf_rule.produces);
-                    }
+            let follow_symbols = follow(bnf_rule.lhs().clone(), &entry_symbol, &bnf);
+            println!("follo {:?} -> {:?}", &bnf_rule.lhs(), &follow_symbols);
+            // TODO: rules are overwriting each other
+            for sym in &follow_symbols {
+                if sym != &Symbol::End {
+                    parser_table.insert(bnf_rule.lhs().clone(), sym.clone(), &bnf_rule.rhs());
                 }
+            }
+            if follow_symbols.contains(&Symbol::End) {
+                parser_table.insert(bnf_rule.lhs().clone(), Symbol::End, &bnf_rule.rhs());
             }
         }
         for sym in first_symbols {
             if sym != Symbol::Epsilon {
-                parser_table.insert(bnf_rule.symbol.clone(), sym, &bnf_rule.produces);
+                parser_table.insert(bnf_rule.lhs().clone(), sym, &bnf_rule.rhs());
             }
         }
     }
