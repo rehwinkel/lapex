@@ -12,7 +12,7 @@ pub enum Symbol {
     End,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct BnfRule {
     symbol: Symbol,
     produces: Vec<Symbol>,
@@ -35,6 +35,10 @@ pub struct Bnf {
 impl Bnf {
     pub fn iter(&self) -> Iter<BnfRule> {
         self.rules.iter()
+    }
+
+    pub fn rules(&self) -> &[BnfRule] {
+        &self.rules
     }
 }
 

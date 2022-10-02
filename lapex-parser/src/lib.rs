@@ -6,8 +6,10 @@ use std::{
 use lapex_input::{EntryRule, ProductionRule, TokenRule};
 
 mod bnf;
-use bnf::{Bnf, Symbol};
+use bnf::{Bnf, BnfRule, Symbol};
+use petgraph::{data::Build, dot::Dot, graph::NodeIndex, prelude::DiGraph, Graph};
 
+/*
 fn first(rule: Symbol, bnf: &Bnf) -> HashSet<Symbol> {
     match rule {
         Symbol::Terminal { token: _ } | Symbol::Epsilon => {
@@ -285,22 +287,105 @@ impl<'bnf> ParserTableBuilder<'bnf> {
         }
     }
 }
+*/
 
-pub fn generate_table(
-    entry: &EntryRule,
-    tokens: &[TokenRule],
-    rules: &[ProductionRule],
-) -> ParserTable {
+fn build_first_graph(
+    graph: &mut Graph<Symbol, ()>,
+    symbol_map: &mut HashMap<Symbol, NodeIndex>,
+    entry: &Symbol,
+    bnf: &Bnf,
+) -> NodeIndex {
+    let mut entry_node_index = None;
+    for rule in bnf.iter().filter(|rule| rule.lhs() == entry) {
+        let node_index = *symbol_map
+            .entry(rule.lhs().clone())
+            .or_insert_with_key(|key| graph.add_node(key.clone()));
+        entry_node_index = Some(node_index);
+        if let Some(first_symbol) = rule.rhs().first() {
+            let existing_target_index = symbol_map.get(first_symbol);
+            let target_index = if let Some(target) = existing_target_index {
+                *target
+            } else {
+                match first_symbol {
+                    Symbol::Terminal { token: _ } | Symbol::Epsilon => {
+                        graph.add_node(first_symbol.clone())
+                    }
+                    _ => build_first_graph(graph, symbol_map, first_symbol, bnf),
+                }
+            };
+            graph.add_edge(node_index, target_index, ());
+        }
+    }
+    entry_node_index.expect("should be result")
+}
+
+fn first<'bnf>(
+    symbol: &Symbol,
+    first_map: &mut HashMap<Symbol, HashMap<Symbol, &'bnf BnfRule>>,
+    bnf: &'bnf Bnf,
+) {
+    let mut first_set = HashMap::new();
+    for rule in bnf.iter().filter(|rule| rule.lhs() == symbol) {
+        let first_symbol = rule.rhs().first().unwrap();
+        match first_symbol {
+            Symbol::Terminal { token: _ } | Symbol::Epsilon => {
+                let previous = first_set.insert(first_symbol.clone(), rule);
+                if previous.is_some() {
+                    panic!("two child rules start with the same token")
+                }
+            }
+            _ => {
+                let existing_symbols = first_map
+                    .get(first_symbol)
+                    .expect("every first-symbol should already exist");
+                for existing in existing_symbols {
+                    let previous = first_set.insert(existing.0.clone(), *existing.1);
+                    if previous.is_some() {
+                        panic!("two child rules start with the same token")
+                    }
+                }
+            }
+        }
+    }
+    first_map.insert(symbol.clone(), first_set);
+}
+
+pub fn generate_table(entry: &EntryRule, tokens: &[TokenRule], rules: &[ProductionRule]) -> () {
     let entry_symbol = rules
         .iter()
         .enumerate()
         .find(|(_, it)| entry.name() == it.name())
         .map(|(i, _)| Symbol::NonTerminalRule { rule_index: i })
         .expect("entry symbol must be a valid rule"); // TODO return result
-    let bnf = bnf::build_bnf(tokens, rules).optimize_bnf(&entry_symbol);
+    let bnf = bnf::build_bnf(tokens, rules); //.optimize_bnf(&entry_symbol);
 
-    println!("{:?}", bnf);
+    // println!("{:?}", bnf);
+    let mut symmap = HashMap::new();
+    let mut g = DiGraph::new();
+    build_first_graph(&mut g, &mut symmap, &entry_symbol, &bnf);
+    let sorted_symbols: Vec<&Symbol> = petgraph::algo::toposort(&g, None)
+        .expect("cylces found, should be result")
+        .into_iter()
+        .map(|nid| g.node_weight(nid).unwrap())
+        .rev()
+        .collect();
 
+    let mut first_map = HashMap::new();
+    for symbol in sorted_symbols {
+        match symbol {
+            Symbol::NonTerminal { index: _ } | Symbol::NonTerminalRule { rule_index: _ } => {
+                first(symbol, &mut first_map, &bnf);
+                println!(
+                    "{:?} => {:?}",
+                    symbol,
+                    first_map.get(symbol).unwrap().keys()
+                );
+            }
+            _ => (),
+        }
+    }
+
+    /*
     let mut parser_table = ParserTable::builder(tokens, &bnf);
     for bnf_rule in bnf.iter() {
         let first_symbols = first(bnf_rule.rhs()[0].clone(), &bnf);
@@ -326,4 +411,5 @@ pub fn generate_table(
     }
     // TODO: remove rules that map one symbol to another: A -> B
     parser_table.build()
+    */
 }
