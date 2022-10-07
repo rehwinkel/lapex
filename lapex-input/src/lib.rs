@@ -242,7 +242,7 @@ fn parse_token_rule(input: &[u8]) -> IResult<&[u8], TokenRule> {
     ))
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct ProductionRule<'src> {
     name: &'src str,
     pattern: ProductionPattern,
@@ -269,7 +269,7 @@ impl<'src> EntryRule<'src> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum ProductionPattern {
     Sequence { elements: Vec<ProductionPattern> },
     Alternative { elements: Vec<ProductionPattern> },
