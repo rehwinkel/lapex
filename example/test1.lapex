@@ -1,5 +1,11 @@
-token PLUS = "+";
-token MINUS = "-";
+token EXC = "!";
+token QUE = "?";
+token LPA = "(";
+token RPA = ")";
+token STRING = "string";
 
-entry sum;
-prod sum = PLUS* MINUS;
+entry Session;
+prod Session = (Facts Question | LPA Session RPA Session);
+prod Facts = (Fact Facts)?;
+prod Fact = EXC STRING;
+prod Question = QUE STRING;

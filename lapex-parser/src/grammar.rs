@@ -11,6 +11,7 @@ use lapex_input::{EntryRule, ProductionPattern, ProductionRule, TokenRule};
 #[derive(Debug)]
 pub enum GrammarError {
     TooManyRules,
+    MissingSymbol(String),
     ConflictingRules,
 }
 
@@ -116,8 +117,10 @@ impl<'rules> GrammarBuilder<'rules> {
             .iter()
             .filter(|token| token.name() == symbol_name)
             .collect();
-
-        if matching_tokens.len() + matching_prods.len() != 1 {
+        let match_count = matching_tokens.len() + matching_prods.len();
+        if match_count == 0 {
+            Err(GrammarError::MissingSymbol(symbol_name.to_string()))
+        } else if match_count != 1 {
             Err(GrammarError::ConflictingRules)
         } else {
             if let Some(token) = matching_tokens.first() {
@@ -184,13 +187,17 @@ impl<'rules> Grammar<'rules> {
     pub fn get_symbol_name(&self, symbol: Symbol) -> String {
         match symbol {
             Symbol::Terminal(terminal_index) => {
-                self.tokens[terminal_index as usize].token().to_string()
+                format!(
+                    "{}({})",
+                    self.tokens[terminal_index as usize].token(),
+                    terminal_index
+                )
             }
             Symbol::NonTerminal(non_terminal_index) => {
                 if let Some(rule) = self.non_terminal_mapping.get(&symbol) {
-                    rule.name().to_string()
+                    format!("{}({})", rule.name(), non_terminal_index)
                 } else {
-                    format!("<anon {}>", non_terminal_index)
+                    format!("<anon>({})", non_terminal_index)
                 }
             }
             Symbol::Epsilon => String::from("<eps>"),

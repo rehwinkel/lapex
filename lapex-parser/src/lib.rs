@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use grammar::{Grammar, GrammarError, Symbol};
-use lapex_input::{EntryRule, ProductionRule, TokenRule};
 use lapex_input::ProductionPattern::Rule;
+use lapex_input::{EntryRule, ProductionRule, TokenRule};
 
 mod grammar;
 
@@ -13,19 +13,19 @@ fn get_follow_symbols_of_remainder(
     follow_sets: &HashMap<Symbol, HashSet<Symbol>>,
 ) -> HashSet<Symbol> {
     let mut result_set = HashSet::new();
-    if remainder.len() > 0 {
-        let remainder_first_set = get_first_symbols_of_sequence(remainder, first_sets);
-        let has_epsilon = remainder_first_set.contains(&Symbol::Epsilon);
-        if has_epsilon {
-            let follow_set_of_lhs = follow_sets.get(&lhs.unwrap()).unwrap().clone();
-            result_set.extend(follow_set_of_lhs);
-        }
-        for remainder_first_symbol in remainder_first_set {
-            if remainder_first_symbol != Symbol::Epsilon {
-                result_set.insert(remainder_first_symbol);
-            }
+    let remainder_first_set = get_first_symbols_of_sequence(remainder, first_sets);
+    let remainder_first_has_epsilon = remainder_first_set.contains(&Symbol::Epsilon);
+    let should_add_lhs_follow_set = remainder_first_has_epsilon || remainder.is_empty();
+    if should_add_lhs_follow_set {
+        let follow_set_of_lhs = follow_sets.get(&lhs.unwrap()).unwrap().clone();
+        result_set.extend(follow_set_of_lhs);
+    }
+    for remainder_first_symbol in remainder_first_set {
+        if remainder_first_symbol != Symbol::Epsilon {
+            result_set.insert(remainder_first_symbol);
         }
     }
+
     result_set
 }
 
@@ -42,7 +42,7 @@ fn compute_follow_sets(
     let terminated_entry_point_rhs = vec![*grammar.entry_point(), Symbol::End];
     loop {
         let grammar_rules = grammar.rules().iter().map(|r| (Some(r.lhs()), r.rhs()));
-        let all_rules = grammar_rules.chain(std::iter::once((None, &terminated_entry_point_rhs)));
+        let all_rules = std::iter::once((None, &terminated_entry_point_rhs)).chain(grammar_rules);
         let mut inserted_any = false;
         for rule in all_rules {
             let lhs = rule.0;
@@ -51,12 +51,8 @@ fn compute_follow_sets(
                 let symbol = &sequence[i];
                 if let Symbol::NonTerminal(_) = symbol {
                     let remainder = &sequence[i + 1..];
-                    let follow_symbols_for_remainder = get_follow_symbols_of_remainder(
-                        lhs,
-                        remainder,
-                        &first_sets,
-                        &follow_sets,
-                    );
+                    let follow_symbols_for_remainder =
+                        get_follow_symbols_of_remainder(lhs, remainder, &first_sets, &follow_sets);
                     let follow_set_of_nt = follow_sets.get_mut(symbol).unwrap();
                     for follow_symbol in follow_symbols_for_remainder {
                         let was_inserted = follow_set_of_nt.insert(follow_symbol);
