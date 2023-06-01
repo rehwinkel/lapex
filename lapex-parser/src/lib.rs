@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 use grammar::{Grammar, GrammarError, Symbol};
-use lapex_input::ProductionPattern::Rule;
 use lapex_input::{EntryRule, ProductionRule, TokenRule};
+use lapex_input::ProductionPattern::Rule;
 
 mod grammar;
 
@@ -150,5 +151,25 @@ pub fn generate_table(
     let follow_sets = compute_follow_sets(&grammar, &first_sets);
     println!("{:?}", first_sets);
     println!("{:?}", follow_sets);
+    let mut parser_table: HashMap<(Symbol, Symbol), Vec<Symbol>> = HashMap::new();
+    for rule in grammar.rules() {
+        let first_set_of_rhs = get_first_symbols_of_sequence(rule.rhs(), &first_sets);
+        for symbol in first_set_of_rhs.iter() {
+            if let Symbol::Terminal(_) = symbol {
+                let previous_entry = parser_table.insert((rule.lhs(), *symbol), rule.rhs().clone());
+                assert!(previous_entry.is_none());
+            }
+        }
+        if first_set_of_rhs.contains(&Symbol::Epsilon) {
+            let follow_set_of_lhs = follow_sets.get(&rule.lhs()).unwrap();
+            for symbol in follow_set_of_lhs.iter() {
+                if let Symbol::Terminal(_) = symbol {
+                    let previous_entry = parser_table.insert((rule.lhs(), *symbol), rule.rhs().clone());
+                    assert!(previous_entry.is_none());
+                }
+            }
+        }
+    }
+    println!("{:?}", parser_table);
     Ok(())
 }
