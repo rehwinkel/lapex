@@ -1,102 +1,82 @@
 use std::collections::{HashMap, HashSet};
 
+use grammar::{Grammar, GrammarError, Symbol};
 use lapex_input::{EntryRule, ProductionRule, TokenRule};
 
 mod grammar;
-use grammar::{Grammar, GrammarError, Symbol};
 
 fn compute_follow_sets(
     first_sets: &HashMap<Symbol, HashSet<Symbol>>,
     grammar: &Grammar,
 ) -> HashMap<Symbol, HashSet<Symbol>> {
-    let mut follow_sets: HashMap<Symbol, HashSet<Symbol>> = grammar
-        .non_terminals()
-        .map(|nt| (nt, HashSet::new()))
-        .collect();
-    loop {
-        let mut changed = false;
-        for rule in grammar.rules() {
-            for window in rule.rhs().windows(2) {
-                println!("{:?}", window);
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-    println!("{:?}", follow_sets);
-    follow_sets
+    todo!()
 }
 
-fn compute_first_sets(grammar: &Grammar) -> HashMap<Symbol, HashSet<Symbol>> {
-    let mut first_sets: HashMap<Symbol, HashSet<Symbol>> = grammar
-        .non_terminals()
-        .map(|nt| (nt, HashSet::new()))
-        .collect();
-    loop {
-        let mut changed = false;
-        for rule in grammar.rules() {
-            // unwrap because rule can never be empty
-            for (n, nth_symbol) in rule.rhs().iter().enumerate() {
-                match nth_symbol {
-                    Symbol::Epsilon => {
-                        if first_sets
-                            .get_mut(&rule.lhs())
-                            .expect("first set missing for rule")
-                            .insert(Symbol::Epsilon)
-                        {
-                            changed = true;
-                        }
-                    }
-                    Symbol::NonTerminal(_) => {
-                        let mut has_epsilon = true;
-                        let nth_first_set: &HashSet<Symbol> = first_sets
-                            .get(nth_symbol)
-                            .expect("nonterminal doesn't have rule");
-                        if !nth_first_set.contains(&Symbol::Epsilon) {
-                            has_epsilon = false;
-                        }
+fn get_first_symbols_of_sequence(sequence: &Vec<Symbol>, first_sets: &HashMap<Symbol, HashSet<Symbol>>) -> HashSet<Symbol> {
+    let epsilon_first_set = {
+        let mut new_set = HashSet::new();
+        new_set.insert(Symbol::Epsilon);
+        new_set
+    };
 
-                        let first_symbols: Vec<Symbol> = nth_first_set
-                            .iter()
-                            .filter(|s| s != &&Symbol::Epsilon)
-                            .map(|s| *s)
-                            .collect();
-                        let rule_first_set = first_sets
-                            .get_mut(&rule.lhs())
-                            .expect("first set missing for rule");
-                        for nt_first in first_symbols {
-                            if rule_first_set.insert(nt_first) {
-                                changed = true;
-                            }
-                        }
-                        // if it has epsilon and is the last symbol
-                        if has_epsilon && (n + 1 == rule.rhs().len()) {
-                            if rule_first_set.insert(Symbol::Epsilon) {
-                                changed = true;
-                            }
-                        }
-                        if !has_epsilon {
-                            break;
-                        }
+    let mut result_set = HashSet::new();
+    for i in 0..sequence.len() {
+        let symbol = sequence[i];
+        let is_last = i + 1 == sequence.len();
+        match symbol {
+            Symbol::Terminal(_) => {
+                result_set.insert(symbol);
+                return result_set;
+            }
+            Symbol::Epsilon |
+            Symbol::NonTerminal(_) => {
+                let mut first_set_for_symbol = if symbol == Symbol::Epsilon {
+                    &epsilon_first_set
+                } else {
+                    first_sets.get(&symbol).unwrap()
+                };
+                let has_epsilon = first_set_for_symbol.contains(&Symbol::Epsilon);
+                for first_symbol in first_set_for_symbol {
+                    if first_symbol != &Symbol::Epsilon {
+                        result_set.insert(*first_symbol);
                     }
-                    Symbol::Terminal(_) => {
-                        if first_sets
-                            .get_mut(&rule.lhs())
-                            .expect("first set missing for rule")
-                            .insert(*nth_symbol)
-                        {
-                            changed = true;
-                            break;
-                        }
+                }
+                if !has_epsilon {
+                    break;
+                } else {
+                    if is_last {
+                        result_set.insert(Symbol::Epsilon);
                     }
                 }
             }
         }
-        if !changed {
+    }
+    result_set
+}
+
+fn compute_first_sets(grammar: &Grammar) -> HashMap<Symbol, HashSet<Symbol>> {
+    // init empty first sets
+    let mut first_sets = HashMap::new();
+    for nt in grammar.non_terminals() {
+        first_sets.insert(nt, HashSet::new());
+    }
+    // repeat until no more changes occur
+    loop {
+        let mut inserted_any = false;
+        for rule in grammar.rules() {
+            let first_for_rhs = get_first_symbols_of_sequence(rule.rhs(), &first_sets);
+            let first_set_of_lhs = first_sets.get_mut(&rule.lhs()).unwrap();
+            for symbol in first_for_rhs {
+                let was_inserted = first_set_of_lhs.insert(symbol);
+                inserted_any = inserted_any || was_inserted;
+            }
+        }
+        // if nothing new was added, we are done
+        if !inserted_any {
             break;
         }
     }
+
     first_sets
 }
 
@@ -108,6 +88,7 @@ pub fn generate_table(
     let grammar = Grammar::from_rules(entry, tokens, rules)?;
     println!("{}", grammar);
     let first_sets = compute_first_sets(&grammar);
+    println!("{:?}", first_sets);
     let follow_sets = compute_follow_sets(&first_sets, &grammar);
     Ok(())
 }

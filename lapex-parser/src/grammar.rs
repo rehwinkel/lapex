@@ -164,24 +164,39 @@ impl<'rules> Grammar<'rules> {
         })
     }
 
-    pub fn non_terminals(&self) -> impl Iterator<Item = Symbol> {
+    pub fn non_terminals(&self) -> impl Iterator<Item=Symbol> {
         (0..self.non_terminal_count).map(|i| Symbol::NonTerminal(i as u32))
     }
 
-    pub fn terminals(&self) -> impl Iterator<Item = Symbol> {
+    pub fn terminals(&self) -> impl Iterator<Item=Symbol> {
         (0..self.tokens.len()).map(|i| Symbol::Terminal(i as u32))
     }
 
     pub fn rules(&self) -> &[Rule] {
         &self.rules
     }
+
+    pub fn get_symbol_name(&self, symbol: Symbol) -> String {
+        match symbol {
+            Symbol::Terminal(terminal_index) => self.tokens[terminal_index as usize].token().to_string(),
+            Symbol::NonTerminal(non_terminal_index) => {
+                if let Some(rule) = self.non_terminal_mapping.get(&symbol) {
+                    rule.name().to_string()
+                } else {
+                    format!("<anon {}>", non_terminal_index)
+                }
+            }
+            Symbol::Epsilon => String::from("<eps>")
+        }
+    }
 }
 
 impl<'rules> Display for Grammar<'rules> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Grammar (entry: {:?}) {{", &self.entry_symbol)?;
+        writeln!(f, "Grammar (entry: {}) {{", self.get_symbol_name(self.entry_symbol))?;
         for rule in &self.rules {
-            writeln!(f, "\t{:?} -> {:?}", rule.lhs(), rule.rhs())?;
+            let rhs_sequence: Vec<String> = rule.rhs().into_iter().map(|s| self.get_symbol_name(*s)).collect();
+            writeln!(f, "\t{} -> {}", self.get_symbol_name(rule.lhs()), rhs_sequence.join(" "))?;
         }
         write!(f, "}}")?;
         Ok(())
