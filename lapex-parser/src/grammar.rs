@@ -31,6 +31,7 @@ impl From<TryFromIntError> for GrammarError {
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum Symbol {
     Epsilon,
+    End,
     NonTerminal(u32),
     Terminal(u32),
 }
@@ -42,7 +43,7 @@ pub struct Rule {
 }
 
 impl Rule {
-    fn new(lhs: Symbol, rhs: Vec<Symbol>) -> Self {
+    pub fn new(lhs: Symbol, rhs: Vec<Symbol>) -> Self {
         let non_terminal_index = match lhs {
             Symbol::NonTerminal(i) => Some(i),
             _ => None,
@@ -164,11 +165,11 @@ impl<'rules> Grammar<'rules> {
         })
     }
 
-    pub fn non_terminals(&self) -> impl Iterator<Item=Symbol> {
+    pub fn non_terminals(&self) -> impl Iterator<Item = Symbol> {
         (0..self.non_terminal_count).map(|i| Symbol::NonTerminal(i as u32))
     }
 
-    pub fn terminals(&self) -> impl Iterator<Item=Symbol> {
+    pub fn terminals(&self) -> impl Iterator<Item = Symbol> {
         (0..self.tokens.len()).map(|i| Symbol::Terminal(i as u32))
     }
 
@@ -176,9 +177,15 @@ impl<'rules> Grammar<'rules> {
         &self.rules
     }
 
+    pub fn entry_point(&self) -> &Symbol {
+        &self.entry_symbol
+    }
+
     pub fn get_symbol_name(&self, symbol: Symbol) -> String {
         match symbol {
-            Symbol::Terminal(terminal_index) => self.tokens[terminal_index as usize].token().to_string(),
+            Symbol::Terminal(terminal_index) => {
+                self.tokens[terminal_index as usize].token().to_string()
+            }
             Symbol::NonTerminal(non_terminal_index) => {
                 if let Some(rule) = self.non_terminal_mapping.get(&symbol) {
                     rule.name().to_string()
@@ -186,17 +193,31 @@ impl<'rules> Grammar<'rules> {
                     format!("<anon {}>", non_terminal_index)
                 }
             }
-            Symbol::Epsilon => String::from("<eps>")
+            Symbol::Epsilon => String::from("<eps>"),
+            Symbol::End => String::from("<end>"),
         }
     }
 }
 
 impl<'rules> Display for Grammar<'rules> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Grammar (entry: {}) {{", self.get_symbol_name(self.entry_symbol))?;
+        writeln!(
+            f,
+            "Grammar (entry: {}) {{",
+            self.get_symbol_name(self.entry_symbol)
+        )?;
         for rule in &self.rules {
-            let rhs_sequence: Vec<String> = rule.rhs().into_iter().map(|s| self.get_symbol_name(*s)).collect();
-            writeln!(f, "\t{} -> {}", self.get_symbol_name(rule.lhs()), rhs_sequence.join(" "))?;
+            let rhs_sequence: Vec<String> = rule
+                .rhs()
+                .into_iter()
+                .map(|s| self.get_symbol_name(*s))
+                .collect();
+            writeln!(
+                f,
+                "\t{} -> {}",
+                self.get_symbol_name(rule.lhs()),
+                rhs_sequence.join(" ")
+            )?;
         }
         write!(f, "}}")?;
         Ok(())
