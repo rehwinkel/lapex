@@ -1,4 +1,5 @@
 token PLUS = "+";
+token MINUS = "-";
 
 entry sum;
-prod sum = PLUS*;
+prod sum = PLUS* MINUS;

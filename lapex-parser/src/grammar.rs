@@ -36,23 +36,23 @@ pub enum Symbol {
 }
 
 #[derive(Debug)]
-struct Rule {
+pub struct Rule {
     lhs: u32,
     rhs: Vec<Symbol>,
 }
 
 impl Rule {
     fn new(lhs: Symbol, rhs: Vec<Symbol>) -> Self {
-        let nonterminal_index = match lhs {
+        let non_terminal_index = match lhs {
             Symbol::NonTerminal(i) => Some(i),
             _ => None,
         };
         assert!(
-            nonterminal_index.is_some(),
+            non_terminal_index.is_some(),
             "Left hand side must be a nonterminal"
         );
         Rule {
-            lhs: nonterminal_index.unwrap(),
+            lhs: non_terminal_index.unwrap(),
             rhs,
         }
     }
@@ -69,13 +69,15 @@ impl Rule {
 #[derive(Debug)]
 pub struct Grammar<'rules> {
     rules: Vec<Rule>,
-    nonterminal_mapping: HashMap<Symbol, &'rules ProductionRule<'rules>>,
+    non_terminal_mapping: HashMap<Symbol, &'rules ProductionRule<'rules>>,
+    tokens: &'rules [TokenRule<'rules>],
+    non_terminal_count: u32,
     entry_symbol: Symbol,
 }
 
 struct GrammarBuilder<'rules> {
     temp_count: u32,
-    nonterminal_mapping: HashMap<&'rules ProductionRule<'rules>, Symbol>,
+    non_terminal_mapping: HashMap<&'rules ProductionRule<'rules>, Symbol>,
     token_rules: &'rules [TokenRule<'rules>],
     production_rules: &'rules [ProductionRule<'rules>],
     rules: Vec<Rule>,
@@ -85,7 +87,7 @@ impl<'rules> GrammarBuilder<'rules> {
     fn new(token_rules: &'rules [TokenRule], production_rules: &'rules [ProductionRule]) -> Self {
         GrammarBuilder {
             temp_count: 0,
-            nonterminal_mapping: HashMap::new(),
+            non_terminal_mapping: HashMap::new(),
             token_rules,
             production_rules,
             rules: Vec::new(),
@@ -93,10 +95,10 @@ impl<'rules> GrammarBuilder<'rules> {
     }
 
     fn get_temp_symbol(&mut self) -> Result<Symbol, GrammarError> {
-        let nonterminal =
-            Symbol::NonTerminal(self.temp_count + u32::try_from(self.nonterminal_mapping.len())?);
+        let non_terminal =
+            Symbol::NonTerminal(self.temp_count + u32::try_from(self.non_terminal_mapping.len())?);
         self.temp_count += 1;
-        Ok(nonterminal)
+        Ok(non_terminal)
     }
 
     fn get_symbol_by_name(&mut self, symbol_name: &str) -> Result<Symbol, GrammarError> {
@@ -121,13 +123,13 @@ impl<'rules> GrammarBuilder<'rules> {
                 Ok(Symbol::Terminal(u32::try_from(*token)?))
             } else {
                 let prod_rule = *matching_prods.first().unwrap();
-                if let Some(nonterminal) = self.nonterminal_mapping.get(prod_rule) {
+                if let Some(nonterminal) = self.non_terminal_mapping.get(prod_rule) {
                     Ok(*nonterminal)
                 } else {
                     let nonterminal = Symbol::NonTerminal(
-                        self.temp_count + u32::try_from(self.nonterminal_mapping.len())?,
+                        self.temp_count + u32::try_from(self.non_terminal_mapping.len())?,
                     );
-                    self.nonterminal_mapping.insert(prod_rule, nonterminal);
+                    self.non_terminal_mapping.insert(prod_rule, nonterminal);
                     Ok(nonterminal)
                 }
             }
@@ -147,24 +149,39 @@ impl<'rules> Grammar<'rules> {
         }
 
         let entry_symbol = grammar_builder.get_symbol_by_name(entry_rule.name())?;
-        let nonterminal_mapping = grammar_builder
-            .nonterminal_mapping
+        let non_terminal_mapping: HashMap<Symbol, &ProductionRule> = grammar_builder
+            .non_terminal_mapping
             .into_iter()
             .map(|(a, b)| (b, a))
             .collect();
+        let non_terminal_count = grammar_builder.temp_count + non_terminal_mapping.len() as u32;
         Ok(Grammar {
             rules: grammar_builder.rules,
-            nonterminal_mapping,
+            tokens: token_rules,
+            non_terminal_mapping,
+            non_terminal_count,
             entry_symbol,
         })
+    }
+
+    pub fn non_terminals(&self) -> impl Iterator<Item = Symbol> {
+        (0..self.non_terminal_count).map(|i| Symbol::NonTerminal(i as u32))
+    }
+
+    pub fn terminals(&self) -> impl Iterator<Item = Symbol> {
+        (0..self.tokens.len()).map(|i| Symbol::Terminal(i as u32))
+    }
+
+    pub fn rules(&self) -> &[Rule] {
+        &self.rules
     }
 }
 
 impl<'rules> Display for Grammar<'rules> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Grammar {{")?;
+        writeln!(f, "Grammar (entry: {:?}) {{", &self.entry_symbol)?;
         for rule in &self.rules {
-            writeln!(f, "{:?} -> {:?}", rule.lhs(), rule.rhs())?;
+            writeln!(f, "\t{:?} -> {:?}", rule.lhs(), rule.rhs())?;
         }
         write!(f, "}}")?;
         Ok(())
