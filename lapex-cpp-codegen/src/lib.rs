@@ -1,14 +1,10 @@
 use std::{io::Write, ops::RangeInclusive};
 
+use petgraph::prelude::*;
+use petgraph::visit::IntoNodeReferences;
+
 use lapex_input::TokenRule;
-use petgraph::{
-    visit::{EdgeRef, IntoNodeReferences},
-    Direction::Outgoing,
-};
-
-use crate::dfa::DfaState;
-
-use super::LexerCodeGen;
+use lapex_lexer::{Dfa, DfaState, LexerCodeGen};
 
 pub struct CppLexerCodeGen {}
 
@@ -78,7 +74,7 @@ impl CppLexerCodeGen {
     }
 
     fn write_state_machine_switch<W: Write>(
-        dfa: &petgraph::Graph<DfaState, usize>,
+        dfa: &Dfa,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         writeln!(output, "switch (state)")?;
@@ -125,7 +121,7 @@ impl LexerCodeGen for CppLexerCodeGen {
         &self,
         rules: &[TokenRule],
         _alphabet: &[RangeInclusive<u32>],
-        _dfa: &petgraph::Graph<DfaState, usize>,
+        _dfa: &Dfa,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         writeln!(output, "#pragma once")?;
@@ -144,7 +140,7 @@ impl LexerCodeGen for CppLexerCodeGen {
         &self,
         _rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
-        dfa: &petgraph::Graph<DfaState, usize>,
+        dfa: &Dfa,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         let mut switch_code = Vec::new();

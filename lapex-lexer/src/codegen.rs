@@ -1,11 +1,8 @@
-mod cpp;
-
 use std::{io::Write, ops::RangeInclusive};
 
 use lapex_input::TokenRule;
-use petgraph::Graph;
 
-use crate::dfa::DfaState;
+use crate::Dfa;
 
 pub trait LexerCodeGen {
     fn has_header(&self) -> bool;
@@ -14,7 +11,7 @@ pub trait LexerCodeGen {
         &self,
         rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
-        dfa: &Graph<DfaState, usize>,
+        dfa: &Dfa,
         output: &mut W,
     ) -> Result<(), std::io::Error>;
 
@@ -22,9 +19,7 @@ pub trait LexerCodeGen {
         &self,
         rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
-        dfa: &Graph<DfaState, usize>,
+        dfa: &Dfa,
         output: &mut W,
     ) -> Result<(), std::io::Error>;
 }
-
-pub use cpp::CppLexerCodeGen;

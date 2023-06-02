@@ -1,10 +1,10 @@
 [package]
-name = "lapex"
+name = "lapex-cpp-codegen"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+petgraph = "0.6.2"
+lapex-input = { path = "../lapex-input" }
 lapex-lexer = { path = "../lapex-lexer" }
 lapex-parser = { path = "../lapex-parser" }
-lapex-input = { path = "../lapex-input" }
-lapex-cpp-codegen = { path = "../lapex-cpp-codegen" }

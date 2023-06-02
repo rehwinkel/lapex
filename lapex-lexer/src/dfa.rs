@@ -1,12 +1,15 @@
-use crate::alphabet;
-use crate::nfa::{self, NfaEdge, NfaState};
-use lapex_input::TokenRule;
-use petgraph::prelude::DiGraph;
-use petgraph::visit::{EdgeRef, IntoNodeReferences};
-use petgraph::{graph::NodeIndex, Graph};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::ops::RangeInclusive;
+
+use petgraph::prelude::DiGraph;
+use petgraph::visit::{EdgeRef, IntoNodeReferences};
+use petgraph::{graph::NodeIndex, Graph};
+
+use lapex_input::TokenRule;
+
+use crate::alphabet;
+use crate::nfa::{self, NfaEdge, NfaState};
 
 fn epsilon_closure(
     graph: &Graph<NfaState, NfaEdge>,
@@ -141,7 +144,9 @@ fn powerset_construction(
     dfa
 }
 
-pub fn generate_dfa(rules: &[TokenRule]) -> (Vec<RangeInclusive<u32>>, Graph<DfaState, usize>) {
+pub type Dfa = Graph<DfaState, usize>;
+
+pub fn generate_dfa(rules: &[TokenRule]) -> (Vec<RangeInclusive<u32>>, Dfa) {
     let alpha = alphabet::generate_alphabet(rules);
 
     let (start, nfa) = nfa::generate_nfa(&alpha, rules);

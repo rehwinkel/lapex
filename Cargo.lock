@@ -34,9 +34,20 @@ dependencies = [
 name = "lapex"
 version = "0.1.0"
 dependencies = [
+ "lapex-cpp-codegen",
  "lapex-input",
  "lapex-lexer",
  "lapex-parser",
+]
+
+[[package]]
+name = "lapex-cpp-codegen"
+version = "0.1.0"
+dependencies = [
+ "lapex-input",
+ "lapex-lexer",
+ "lapex-parser",
+ "petgraph",
 ]
 
 [[package]]

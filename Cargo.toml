@@ -3,5 +3,6 @@ members = [
     "lapex",
     "lapex-input",
     "lapex-lexer",
-    "lapex-parser"
+    "lapex-parser",
+    "lapex-cpp-codegen"
 ]
