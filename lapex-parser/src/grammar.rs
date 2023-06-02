@@ -8,7 +8,7 @@ use std::{
 
 use lapex_input::{ProductionPattern, ProductionRule, RuleSet, TokenRule};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum GrammarError {
     TooManyRules,
     MissingSymbol(String),

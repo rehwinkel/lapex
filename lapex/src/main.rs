@@ -4,7 +4,7 @@ use lapex_input::TokenRule;
 use lapex_lexer::{Dfa, LexerCodeGen};
 
 fn main() {
-    let path = "example/test3.lapex";
+    let path = "example/test4.lapex";
     let file_contents = std::fs::read(path).unwrap();
     let rules = lapex_input::parse_lapex_file(&file_contents).unwrap();
     let (alphabet, dfa) = lapex_lexer::generate_dfa(rules.tokens());

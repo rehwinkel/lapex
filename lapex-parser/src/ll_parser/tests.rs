@@ -1,4 +1,5 @@
 use crate::grammar::Symbol;
+use crate::ll_parser::LLParserError;
 
 use super::{generate_table, ParserTable};
 
@@ -62,4 +63,74 @@ fn test_generate_table_valid() {
         )
         .unwrap();
     assert_eq!(table, target_table);
+}
+
+#[test]
+fn test_generate_table_first_conflict() {
+    let grammar = r#"
+    token A = "a";
+    token B = "b";
+    token C = "c";
+
+    entry x;
+    prod x = (A B | A C);
+    "#;
+    let rules = lapex_input::parse_lapex_file(grammar.as_bytes()).unwrap();
+    assert_eq!(
+        generate_table(&rules),
+        Err(LLParserError::ParserTableConflict {
+            non_terminal: Symbol::NonTerminal(1),
+            terminal: Symbol::Terminal(0),
+            production: vec![Symbol::Terminal(0), Symbol::Terminal(2)],
+            existing_production: vec![Symbol::Terminal(0), Symbol::Terminal(1)],
+        })
+    );
+}
+
+#[test]
+fn test_generate_table_first_follow_conflict() {
+    let grammar = r#"
+    token A = "a";
+    token B = "b";
+    token C = "c";
+
+    entry x;
+    prod x = y z;
+    prod y = (A B)?;
+    prod z = A C;
+    "#;
+    let rules = lapex_input::parse_lapex_file(grammar.as_bytes()).unwrap();
+    assert_eq!(
+        generate_table(&rules),
+        Err(LLParserError::ParserTableConflict {
+            non_terminal: Symbol::NonTerminal(3),
+            terminal: Symbol::Terminal(0),
+            production: vec![Symbol::Epsilon],
+            existing_production: vec![Symbol::Terminal(0), Symbol::Terminal(1)],
+        })
+    );
+}
+
+#[test]
+fn test_generate_table_follow_conflict() {
+    let grammar = r#"
+    token A = "a";
+    token B = "b";
+    token C = "c";
+
+    entry x;
+    prod x = (y | z) C;
+    prod y = (A)?;
+    prod z = (B)?;
+    "#;
+    let rules = lapex_input::parse_lapex_file(grammar.as_bytes()).unwrap();
+    assert_eq!(
+        generate_table(&rules),
+        Err(LLParserError::ParserTableConflict {
+            non_terminal: Symbol::NonTerminal(1),
+            terminal: Symbol::Terminal(2),
+            production: vec![Symbol::NonTerminal(3)],
+            existing_production: vec![Symbol::NonTerminal(2)],
+        })
+    );
 }

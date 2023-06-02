@@ -140,7 +140,7 @@ fn compute_first_sets(grammar: &Grammar) -> HashMap<Symbol, HashSet<Symbol>> {
     first_sets
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum LLParserError {
     InvalidParserTableEntry,
     ParserTableConflict {
@@ -230,8 +230,12 @@ impl ParserTable {
 
 pub fn generate_table(rule_set: &RuleSet) -> Result<ParserTable, LLParserError> {
     let grammar = Grammar::from_rule_set(rule_set)?;
+    println!("{}", grammar);
     let first_sets = compute_first_sets(&grammar);
     let follow_sets = compute_follow_sets(&grammar, &first_sets);
+    println!("{:?}", first_sets);
+    println!("{:?}", follow_sets);
+    // TODO: empty first sets
     let mut parser_table = ParserTable::new();
     for rule in grammar.rules() {
         let first_set_of_rhs = get_first_symbols_of_sequence(rule.rhs(), &first_sets);

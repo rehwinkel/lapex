@@ -1,0 +1,4 @@
+token A = "A";
+
+entry a;
+prod a = a A;
