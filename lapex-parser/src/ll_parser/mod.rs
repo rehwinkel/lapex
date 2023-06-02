@@ -1,8 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroU32;
 
-use crate::grammar::{Grammar, GrammarError, Symbol};
 use lapex_input::RuleSet;
+
+use crate::grammar::{Grammar, GrammarError, Symbol};
 
 fn get_follow_symbols_of_remainder(
     lhs: Option<Symbol>,
@@ -137,7 +138,7 @@ fn compute_first_sets(grammar: &Grammar) -> HashMap<Symbol, HashSet<Symbol>> {
     first_sets
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ParserTable {
     table: HashMap<(u32, Option<NonZeroU32>), Vec<Symbol>>,
 }
