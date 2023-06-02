@@ -1,0 +1,8 @@
+token PLUS = "+";
+token MINUS = "-";
+token NUMBER = /[0-9]+/;
+
+entry term;
+prod term = (addition | subtraction);
+prod addition = NUMBER PLUS NUMBER;
+prod subtraction = NUMBER MINUS NUMBER;

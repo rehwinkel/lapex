@@ -1,5 +1,5 @@
 fn main() {
-    let path = "example/test1.lapex";
+    let path = "example/test3.lapex";
     let file_contents = std::fs::read(path).unwrap();
     let rules = lapex_input::parse_lapex_file(&file_contents).unwrap();
     let (_alphabet, _dfa) = lapex_lexer::generate_dfa(rules.tokens());

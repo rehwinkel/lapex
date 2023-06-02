@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use std::num::NonZeroU32;
 
 use lapex_input::RuleSet;
@@ -138,6 +140,32 @@ fn compute_first_sets(grammar: &Grammar) -> HashMap<Symbol, HashSet<Symbol>> {
     first_sets
 }
 
+#[derive(Debug)]
+pub enum LLParserError {
+    InvalidParserTableEntry,
+    ParserTableConflict {
+        non_terminal: Symbol,
+        terminal: Symbol,
+        production: Vec<Symbol>,
+        existing_production: Vec<Symbol>,
+    },
+    GrammarError(GrammarError),
+}
+
+impl From<GrammarError> for LLParserError {
+    fn from(value: GrammarError) -> Self {
+        LLParserError::GrammarError(value)
+    }
+}
+
+impl Error for LLParserError {}
+
+impl Display for LLParserError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct ParserTable {
     table: HashMap<(u32, Option<NonZeroU32>), Vec<Symbol>>,
@@ -150,37 +178,57 @@ impl ParserTable {
         }
     }
 
+    fn check_for_conflict_and_insert(
+        &mut self,
+        non_terminal_index: u32,
+        terminal_index: Option<NonZeroU32>,
+        production: Vec<Symbol>,
+    ) -> Result<(), LLParserError> {
+        let table_key = (non_terminal_index, terminal_index);
+        if let Some(prev_production) = self.table.get(&table_key) {
+            return Err(LLParserError::ParserTableConflict {
+                non_terminal: Symbol::NonTerminal(non_terminal_index),
+                terminal: match terminal_index {
+                    Some(terminal_index) => Symbol::Terminal(terminal_index.get() - 1),
+                    None => Symbol::End,
+                },
+                production: production.clone(),
+                existing_production: prev_production.clone(),
+            });
+        }
+        let prev_entry = self.table.insert(table_key, production);
+        assert!(prev_entry.is_none());
+        Ok(())
+    }
+
     fn insert(
         &mut self,
         non_terminal: Symbol,
         terminal: Symbol,
         production: Vec<Symbol>,
-    ) -> Result<(), ()> {
+    ) -> Result<(), LLParserError> {
         if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
             match terminal {
                 Symbol::Terminal(terminal_index) => {
-                    let prev_entry = self.table.insert(
-                        (non_terminal_index, NonZeroU32::new(terminal_index + 1)),
+                    self.check_for_conflict_and_insert(
+                        non_terminal_index,
+                        NonZeroU32::new(terminal_index + 1),
                         production,
-                    );
-                    if prev_entry.is_none() {
-                        return Ok(());
-                    }
+                    )?;
+                    return Ok(());
                 }
                 Symbol::End => {
-                    let prev_entry = self.table.insert((non_terminal_index, None), production);
-                    if prev_entry.is_none() {
-                        return Ok(());
-                    }
+                    self.check_for_conflict_and_insert(non_terminal_index, None, production)?;
+                    return Ok(());
                 }
                 _ => (),
             }
         }
-        Err(())
+        Err(LLParserError::InvalidParserTableEntry)
     }
 }
 
-pub fn generate_table(rule_set: &RuleSet) -> Result<ParserTable, GrammarError> {
+pub fn generate_table(rule_set: &RuleSet) -> Result<ParserTable, LLParserError> {
     let grammar = Grammar::from_rule_set(rule_set)?;
     let first_sets = compute_first_sets(&grammar);
     let follow_sets = compute_follow_sets(&grammar, &first_sets);
@@ -190,9 +238,7 @@ pub fn generate_table(rule_set: &RuleSet) -> Result<ParserTable, GrammarError> {
         for symbol in first_set_of_rhs.iter() {
             match symbol {
                 Symbol::End | Symbol::Terminal(_) => {
-                    parser_table
-                        .insert(rule.lhs(), *symbol, rule.rhs().clone())
-                        .expect("parser table conflict");
+                    parser_table.insert(rule.lhs(), *symbol, rule.rhs().clone())?;
                 }
                 _ => (),
             }
@@ -202,9 +248,7 @@ pub fn generate_table(rule_set: &RuleSet) -> Result<ParserTable, GrammarError> {
             for symbol in follow_set_of_lhs.iter() {
                 match symbol {
                     Symbol::End | Symbol::Terminal(_) => {
-                        parser_table
-                            .insert(rule.lhs(), *symbol, rule.rhs().clone())
-                            .expect("parser table conflict");
+                        parser_table.insert(rule.lhs(), *symbol, rule.rhs().clone())?;
                     }
                     _ => (),
                 }

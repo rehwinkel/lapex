@@ -12,7 +12,11 @@ use lapex_input::{ProductionPattern, ProductionRule, RuleSet, TokenRule};
 pub enum GrammarError {
     TooManyRules,
     MissingSymbol(String),
-    ConflictingRules,
+    ConflictingRules {
+        rule_name: String,
+        rule_matches: usize,
+    },
+    RuleWithTerminalLeftHandSide,
 }
 
 impl Error for GrammarError {}
@@ -44,18 +48,18 @@ pub struct Rule {
 }
 
 impl Rule {
-    pub fn new(lhs: Symbol, rhs: Vec<Symbol>) -> Self {
+    pub fn new(lhs: Symbol, rhs: Vec<Symbol>) -> Result<Self, GrammarError> {
         let non_terminal_index = match lhs {
             Symbol::NonTerminal(i) => Some(i),
             _ => None,
         };
-        assert!(
-            non_terminal_index.is_some(),
-            "Left hand side must be a nonterminal"
-        );
-        Rule {
-            lhs: non_terminal_index.unwrap(),
-            rhs,
+        if let Some(non_terminal_index) = non_terminal_index {
+            Ok(Rule {
+                lhs: non_terminal_index,
+                rhs,
+            })
+        } else {
+            Err(GrammarError::RuleWithTerminalLeftHandSide)
         }
     }
 
@@ -121,11 +125,19 @@ impl<'rules> GrammarBuilder<'rules> {
         if match_count == 0 {
             Err(GrammarError::MissingSymbol(symbol_name.to_string()))
         } else if match_count != 1 {
-            Err(GrammarError::ConflictingRules)
+            Err(GrammarError::ConflictingRules {
+                rule_name: symbol_name.to_string(),
+                rule_matches: match_count,
+            })
         } else {
             if let Some(token) = matching_tokens.first() {
                 Ok(Symbol::Terminal(u32::try_from(*token)?))
             } else {
+                /*
+                 * There is a total of 1 token/production.
+                 * If the first token is None, the first production must necessarily exist.
+                 * Therefore, we can unwrap here.
+                 */
                 let prod_rule = *matching_prods.first().unwrap();
                 if let Some(nonterminal) = self.non_terminal_mapping.get(prod_rule) {
                     Ok(*nonterminal)
@@ -230,7 +242,7 @@ impl<'rules> GrammarBuilder<'rules> {
     ) -> Result<(), GrammarError> {
         let symbol = self.get_symbol_by_name(prod_rule.name())?;
         let produces = self.transform_pattern(prod_rule.pattern())?;
-        self.rules.push(Rule::new(symbol, produces));
+        self.rules.push(Rule::new(symbol, produces)?);
         Ok(())
     }
 
@@ -251,7 +263,7 @@ impl<'rules> GrammarBuilder<'rules> {
                 let alt_symbol = self.get_temp_symbol()?;
                 for elem in elements {
                     let inner_produces = self.transform_pattern(elem)?;
-                    self.rules.push(Rule::new(alt_symbol, inner_produces));
+                    self.rules.push(Rule::new(alt_symbol, inner_produces)?);
                 }
                 Ok(vec![alt_symbol])
             }
@@ -259,9 +271,9 @@ impl<'rules> GrammarBuilder<'rules> {
                 let rep_symbol = self.get_temp_symbol()?;
                 let mut inner_produces = self.transform_pattern(inner)?;
                 self.rules
-                    .push(Rule::new(rep_symbol, inner_produces.clone()));
+                    .push(Rule::new(rep_symbol, inner_produces.clone())?);
                 inner_produces.push(rep_symbol);
-                self.rules.push(Rule::new(rep_symbol, inner_produces));
+                self.rules.push(Rule::new(rep_symbol, inner_produces)?);
                 Ok(vec![rep_symbol])
             }
             ProductionPattern::ZeroOrMany { inner } => {
@@ -269,15 +281,15 @@ impl<'rules> GrammarBuilder<'rules> {
                 let mut inner_produces = self.transform_pattern(inner)?;
                 inner_produces.push(rep_symbol);
                 self.rules
-                    .push(Rule::new(rep_symbol, vec![Symbol::Epsilon]));
-                self.rules.push(Rule::new(rep_symbol, inner_produces));
+                    .push(Rule::new(rep_symbol, vec![Symbol::Epsilon])?);
+                self.rules.push(Rule::new(rep_symbol, inner_produces)?);
                 Ok(vec![rep_symbol])
             }
             ProductionPattern::Optional { inner } => {
                 let symbol = self.get_temp_symbol()?;
                 let inner_produces = self.transform_pattern(inner)?;
-                self.rules.push(Rule::new(symbol, inner_produces));
-                self.rules.push(Rule::new(symbol, vec![Symbol::Epsilon]));
+                self.rules.push(Rule::new(symbol, inner_produces)?);
+                self.rules.push(Rule::new(symbol, vec![Symbol::Epsilon])?);
                 Ok(vec![symbol])
             }
             ProductionPattern::Rule { rule_name } => Ok(vec![self.get_symbol_by_name(rule_name)?]),
