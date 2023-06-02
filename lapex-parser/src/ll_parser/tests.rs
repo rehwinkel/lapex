@@ -1,4 +1,4 @@
-use crate::{generate_table, ParserTable};
+use super::{generate_table, ParserTable};
 
 #[test]
 fn test_generate_table_valid() {

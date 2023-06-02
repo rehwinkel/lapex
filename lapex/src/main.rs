@@ -3,7 +3,7 @@ fn main() {
     let file_contents = std::fs::read(path).unwrap();
     let rules = lapex_input::parse_lapex_file(&file_contents).unwrap();
     let (_alphabet, _dfa) = lapex_lexer::generate_dfa(rules.tokens());
-    let parser_table = lapex_parser::generate_table(&rules).unwrap();
+    let parser_table = lapex_parser::ll_parser::generate_table(&rules).unwrap();
     println!("{:?}", parser_table);
     // println!("{:?}", parser_table.debug(&token_rules, &prod_rules));
 
