@@ -1,9 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::hash::Hash;
+use std::num::NonZeroU32;
 
 use grammar::{Grammar, GrammarError, Symbol};
-use lapex_input::{EntryRule, ProductionRule, TokenRule};
-use lapex_input::ProductionPattern::Rule;
+use lapex_input::RuleSet;
 
 mod grammar;
 
@@ -90,7 +89,7 @@ fn get_first_symbols_of_sequence(
                 return result_set;
             }
             Symbol::Epsilon | Symbol::NonTerminal(_) => {
-                let mut first_set_for_symbol = if symbol == Symbol::Epsilon {
+                let first_set_for_symbol = if symbol == Symbol::Epsilon {
                     &epsilon_first_set
                 } else {
                     first_sets.get(&symbol).unwrap()
@@ -140,36 +139,81 @@ fn compute_first_sets(grammar: &Grammar) -> HashMap<Symbol, HashSet<Symbol>> {
     first_sets
 }
 
-pub fn generate_table(
-    entry: &EntryRule,
-    tokens: &[TokenRule],
-    rules: &[ProductionRule],
-) -> Result<(), GrammarError> {
-    let grammar = Grammar::from_rules(entry, tokens, rules)?;
-    println!("{}", grammar);
+#[derive(Debug)]
+pub struct ParserTable {
+    table: HashMap<(u32, Option<NonZeroU32>), Vec<Symbol>>,
+}
+
+impl ParserTable {
+    fn new() -> Self {
+        ParserTable {
+            table: HashMap::new(),
+        }
+    }
+
+    fn insert(
+        &mut self,
+        non_terminal: Symbol,
+        terminal: Symbol,
+        production: Vec<Symbol>,
+    ) -> Result<(), ()> {
+        if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
+            match terminal {
+                Symbol::Terminal(terminal_index) => {
+                    let prev_entry = self.table.insert(
+                        (non_terminal_index, NonZeroU32::new(terminal_index + 1)),
+                        production,
+                    );
+                    if prev_entry.is_none() {
+                        return Ok(());
+                    }
+                }
+                Symbol::End => {
+                    let prev_entry = self.table.insert((non_terminal_index, None), production);
+                    if prev_entry.is_none() {
+                        return Ok(());
+                    }
+                }
+                _ => (),
+            }
+        }
+        Err(())
+    }
+}
+
+pub fn generate_table(rule_set: &RuleSet) -> Result<ParserTable, GrammarError> {
+    let grammar = Grammar::from_rule_set(rule_set)?;
     let first_sets = compute_first_sets(&grammar);
     let follow_sets = compute_follow_sets(&grammar, &first_sets);
-    println!("{:?}", first_sets);
-    println!("{:?}", follow_sets);
-    let mut parser_table: HashMap<(Symbol, Symbol), Vec<Symbol>> = HashMap::new();
+    let mut parser_table = ParserTable::new();
     for rule in grammar.rules() {
         let first_set_of_rhs = get_first_symbols_of_sequence(rule.rhs(), &first_sets);
         for symbol in first_set_of_rhs.iter() {
-            if let Symbol::Terminal(_) = symbol {
-                let previous_entry = parser_table.insert((rule.lhs(), *symbol), rule.rhs().clone());
-                assert!(previous_entry.is_none());
+            match symbol {
+                Symbol::End | Symbol::Terminal(_) => {
+                    parser_table
+                        .insert(rule.lhs(), *symbol, rule.rhs().clone())
+                        .expect("parser table conflict");
+                }
+                _ => (),
             }
         }
         if first_set_of_rhs.contains(&Symbol::Epsilon) {
             let follow_set_of_lhs = follow_sets.get(&rule.lhs()).unwrap();
             for symbol in follow_set_of_lhs.iter() {
-                if let Symbol::Terminal(_) = symbol {
-                    let previous_entry = parser_table.insert((rule.lhs(), *symbol), rule.rhs().clone());
-                    assert!(previous_entry.is_none());
+                match symbol {
+                    Symbol::End | Symbol::Terminal(_) => {
+                        parser_table
+                            .insert(rule.lhs(), *symbol, rule.rhs().clone())
+                            .expect("parser table conflict");
+                    }
+                    _ => (),
                 }
             }
         }
     }
-    println!("{:?}", parser_table);
-    Ok(())
+    Ok(parser_table)
 }
+
+#[cfg(test)]
+mod tests;

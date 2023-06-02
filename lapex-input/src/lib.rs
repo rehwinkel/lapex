@@ -1,9 +1,11 @@
+use std::fmt::{Display, Formatter};
 use std::ops::Range;
 
+use nom::character::complete::{multispace0, multispace1};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take, take_while1, take_while_m_n},
-    character::complete::{newline, space1},
+    character::complete::space1,
     combinator::{map, opt},
     multi::{many1, separated_list1},
     IResult,
@@ -166,11 +168,7 @@ fn parse_regex_element(input: &[u8]) -> IResult<&[u8], Pattern> {
 
 fn parse_regex_repetition(input: &[u8]) -> IResult<&[u8], Pattern> {
     let (input, inner) = parse_regex_element(input)?;
-    let (input, rep_kind) = opt(alt((
-        map(tag("*"), |_| 0),
-        map(tag("+"), |_| 1),
-        map(tag("?"), |_| 2),
-    )))(input)?;
+    let (input, rep_kind) = parse_repetition_kind(input)?;
     let pattern = if let Some(rep) = rep_kind {
         match rep {
             0 => Pattern::ZeroOrMany {
@@ -264,6 +262,10 @@ pub struct EntryRule<'src> {
 }
 
 impl<'src> EntryRule<'src> {
+    pub fn new(name: &'src str) -> Self {
+        EntryRule { name }
+    }
+
     pub fn name(&self) -> &str {
         self.name
     }
@@ -304,13 +306,17 @@ fn parse_production_element(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
     alt((parse_production_group, parse_rule_name))(input)
 }
 
-fn parse_production_regex_repetition(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
-    let (input, inner) = parse_production_element(input)?;
-    let (input, rep_kind) = opt(alt((
+fn parse_repetition_kind(input: &[u8]) -> IResult<&[u8], Option<i32>> {
+    opt(alt((
         map(tag("*"), |_| 0),
         map(tag("+"), |_| 1),
         map(tag("?"), |_| 2),
-    )))(input)?;
+    )))(input)
+}
+
+fn parse_production_regex_repetition(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
+    let (input, inner) = parse_production_element(input)?;
+    let (input, rep_kind) = parse_repetition_kind(input)?;
     let pattern = if let Some(rep) = rep_kind {
         match rep {
             0 => ProductionPattern::ZeroOrMany {
@@ -380,9 +386,75 @@ fn parse_rule(input: &[u8]) -> IResult<&[u8], Rule> {
     ))(input)
 }
 
-pub fn parse_lapex(input: &[u8]) -> IResult<&[u8], Vec<Rule>> {
-    let (input, rules) = nom::multi::separated_list1(many1(newline), parse_rule)(input)?;
+fn parse_lapex_file_raw(input: &[u8]) -> IResult<&[u8], Vec<Rule>> {
+    let (input, _) = multispace0(input)?;
+    let (input, rules) = separated_list1(multispace1, parse_rule)(input)?;
+    let (input, _) = multispace0(input)?;
     Ok((input, rules))
+}
+
+pub struct RuleSet<'src> {
+    entry_rule: EntryRule<'src>,
+    token_rules: Vec<TokenRule<'src>>,
+    production_rules: Vec<ProductionRule<'src>>,
+}
+
+impl<'src> RuleSet<'src> {
+    pub fn entry(&self) -> &EntryRule {
+        &self.entry_rule
+    }
+    pub fn tokens(&self) -> &[TokenRule] {
+        &self.token_rules
+    }
+    pub fn productions(&self) -> &[ProductionRule] {
+        &self.production_rules
+    }
+}
+
+#[derive(Debug)]
+pub enum LapexParsingError {
+    IncompleteParsing(String),
+    NoEntryRule,
+    TooManyEntryRules,
+}
+
+impl std::error::Error for LapexParsingError {}
+
+impl Display for LapexParsingError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+pub fn parse_lapex_file(input: &[u8]) -> Result<RuleSet, LapexParsingError> {
+    let (remaining, rules) = parse_lapex_file_raw(input).unwrap();
+    if !remaining.is_empty() {
+        return Err(LapexParsingError::IncompleteParsing(
+            String::from_utf8_lossy(&remaining).to_string(),
+        ));
+    }
+    let mut token_rules = Vec::new();
+    let mut prod_rules = Vec::new();
+    let mut entry_rules = Vec::new();
+    for rule in rules {
+        match rule {
+            Rule::TokenRule(tr) => token_rules.push(tr),
+            Rule::ProductionRule(pr) => prod_rules.push(pr),
+            Rule::EntryRule(er) => entry_rules.push(er),
+        }
+    }
+    if entry_rules.len() == 0 {
+        return Err(LapexParsingError::NoEntryRule);
+    }
+    if entry_rules.len() != 1 {
+        return Err(LapexParsingError::TooManyEntryRules);
+    }
+    let rule_set = RuleSet {
+        entry_rule: entry_rules.remove(0),
+        token_rules,
+        production_rules: prod_rules,
+    };
+    Ok(rule_set)
 }
 
 #[cfg(test)]

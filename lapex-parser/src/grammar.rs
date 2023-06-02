@@ -6,7 +6,7 @@ use std::{
     num::TryFromIntError,
 };
 
-use lapex_input::{EntryRule, ProductionPattern, ProductionRule, TokenRule};
+use lapex_input::{ProductionPattern, ProductionRule, RuleSet, TokenRule};
 
 #[derive(Debug)]
 pub enum GrammarError {
@@ -142,17 +142,13 @@ impl<'rules> GrammarBuilder<'rules> {
 }
 
 impl<'rules> Grammar<'rules> {
-    pub fn from_rules(
-        entry_rule: &'rules EntryRule,
-        token_rules: &'rules [TokenRule],
-        production_rules: &'rules [ProductionRule],
-    ) -> Result<Self, GrammarError> {
-        let mut grammar_builder = GrammarBuilder::new(token_rules, production_rules);
-        for prod_rule in production_rules {
+    pub fn from_rule_set(rule_set: &'rules RuleSet) -> Result<Self, GrammarError> {
+        let mut grammar_builder = GrammarBuilder::new(rule_set.tokens(), rule_set.productions());
+        for prod_rule in rule_set.productions() {
             grammar_builder.add_production_rule(prod_rule)?;
         }
 
-        let entry_symbol = grammar_builder.get_symbol_by_name(entry_rule.name())?;
+        let entry_symbol = grammar_builder.get_symbol_by_name(rule_set.entry().name())?;
         let non_terminal_mapping: HashMap<Symbol, &ProductionRule> = grammar_builder
             .non_terminal_mapping
             .into_iter()
@@ -161,7 +157,7 @@ impl<'rules> Grammar<'rules> {
         let non_terminal_count = grammar_builder.temp_count + non_terminal_mapping.len() as u32;
         Ok(Grammar {
             rules: grammar_builder.rules,
-            tokens: token_rules,
+            tokens: rule_set.tokens(),
             non_terminal_mapping,
             non_terminal_count,
             entry_symbol,
@@ -170,10 +166,6 @@ impl<'rules> Grammar<'rules> {
 
     pub fn non_terminals(&self) -> impl Iterator<Item = Symbol> {
         (0..self.non_terminal_count).map(|i| Symbol::NonTerminal(i as u32))
-    }
-
-    pub fn terminals(&self) -> impl Iterator<Item = Symbol> {
-        (0..self.tokens.len()).map(|i| Symbol::Terminal(i as u32))
     }
 
     pub fn rules(&self) -> &[Rule] {

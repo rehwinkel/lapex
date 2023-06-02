@@ -1,10 +1,11 @@
 use std::collections::HashSet;
-
-use lapex_input::{Characters, Pattern, TokenRule};
-use petgraph::{graph::EdgeIndex, graph::NodeIndex, prelude::DiGraph, Graph};
 use std::fmt::Debug;
 
-use crate::alphabet::{self, Alphabet};
+use petgraph::{graph::EdgeIndex, graph::NodeIndex, prelude::DiGraph, Graph};
+
+use lapex_input::{Characters, Pattern, TokenRule};
+
+use crate::alphabet::Alphabet;
 
 pub enum NfaEdge {
     Epsilon,
@@ -64,7 +65,7 @@ impl Nfa {
 fn build_nfa_from_pattern(
     start: NodeIndex,
     end: NodeIndex,
-    alphabet: &alphabet::Alphabet,
+    alphabet: &Alphabet,
     nfa: &mut Nfa,
     pattern: &Pattern,
 ) -> Option<()> {

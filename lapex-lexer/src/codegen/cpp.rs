@@ -78,7 +78,7 @@ impl CppLexerCodeGen {
     }
 
     fn write_state_machine_switch<W: Write>(
-        dfa: &petgraph::Graph<crate::dfa::DfaState, usize>,
+        dfa: &petgraph::Graph<DfaState, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         writeln!(output, "switch (state)")?;
@@ -117,11 +117,15 @@ impl CppLexerCodeGen {
 }
 
 impl LexerCodeGen for CppLexerCodeGen {
-    fn generate_header<W: std::io::Write>(
+    fn has_header(&self) -> bool {
+        true
+    }
+
+    fn generate_header<W: Write>(
         &self,
         rules: &[TokenRule],
-        _alphabet: &[std::ops::RangeInclusive<u32>],
-        _dfa: &petgraph::Graph<crate::dfa::DfaState, usize>,
+        _alphabet: &[RangeInclusive<u32>],
+        _dfa: &petgraph::Graph<DfaState, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         writeln!(output, "#pragma once")?;
@@ -136,15 +140,11 @@ impl LexerCodeGen for CppLexerCodeGen {
         writeln!(output, "}}")
     }
 
-    fn has_header(&self) -> bool {
-        true
-    }
-
     fn generate_source<W: Write>(
         &self,
         _rules: &[TokenRule],
-        alphabet: &[std::ops::RangeInclusive<u32>],
-        dfa: &petgraph::Graph<crate::dfa::DfaState, usize>,
+        alphabet: &[RangeInclusive<u32>],
+        dfa: &petgraph::Graph<DfaState, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         let mut switch_code = Vec::new();
