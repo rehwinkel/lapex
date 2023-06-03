@@ -7,7 +7,7 @@ token RPAR = ")";
 token NUMBER = /([1-9][0-9]*|0)/;
 token WS = /[ \t\n\r]+/;
 
-entry SUM;
-prod SUM = FACTOR ((PLUS | MINUS) FACTOR)*;
-prod FACTOR = OPERAND ((ASTERISK | SLASH) OPERAND)*;
-prod OPERAND = (NUMBER | LPAR SUM RPAR);
+entry sum;
+prod sum = factor ((PLUS | MINUS) factor)*;
+prod factor = operand ((ASTERISK | SLASH) operand)*;
+prod operand = (NUMBER | LPAR sum RPAR);

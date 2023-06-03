@@ -180,6 +180,29 @@ impl<'rules> Grammar<'rules> {
         (0..self.non_terminal_count).map(|i| Symbol::NonTerminal(i as u32))
     }
 
+    pub fn terminals_with_names(&self) -> impl Iterator<Item = (Symbol, &str)> {
+        self.tokens
+            .iter()
+            .enumerate()
+            .map(|(i, token_rule)| (Symbol::Terminal(i as u32), token_rule.token()))
+    }
+
+    pub fn get_token_name(&self, index: u32) -> &str {
+        self.tokens[index as usize].token()
+    }
+
+    pub fn get_production_name(&self, non_terminal: &Symbol) -> Option<&str> {
+        if let Symbol::NonTerminal(_) = non_terminal {
+            if let Some(rule) = self.non_terminal_mapping.get(non_terminal) {
+                Some(rule.name())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     pub fn rules(&self) -> &[Rule] {
         &self.rules
     }
@@ -188,12 +211,25 @@ impl<'rules> Grammar<'rules> {
         &self.entry_symbol
     }
 
-    pub fn get_symbol_name(&self, symbol: Symbol) -> String {
+    pub fn is_named_non_terminal(&self, symbol: Symbol) -> Option<&str> {
+        match symbol {
+            Symbol::NonTerminal(_) => {
+                if let Some(rule) = self.non_terminal_mapping.get(&symbol) {
+                    Some(rule.name())
+                } else {
+                    None
+                }
+            }
+            Symbol::Terminal(_) | Symbol::Epsilon | Symbol::End => None,
+        }
+    }
+
+    pub fn get_symbol_name(&self, symbol: &Symbol) -> String {
         match symbol {
             Symbol::Terminal(terminal_index) => {
                 format!(
                     "{}({})",
-                    self.tokens[terminal_index as usize].token(),
+                    self.tokens[*terminal_index as usize].token(),
                     terminal_index
                 )
             }
@@ -215,18 +251,18 @@ impl<'rules> Display for Grammar<'rules> {
         writeln!(
             f,
             "Grammar (entry: {}) {{",
-            self.get_symbol_name(self.entry_symbol)
+            self.get_symbol_name(&self.entry_symbol)
         )?;
         for rule in &self.rules {
             let rhs_sequence: Vec<String> = rule
                 .rhs()
                 .into_iter()
-                .map(|s| self.get_symbol_name(*s))
+                .map(|s| self.get_symbol_name(s))
                 .collect();
             writeln!(
                 f,
                 "\t{} -> {}",
-                self.get_symbol_name(rule.lhs()),
+                self.get_symbol_name(&rule.lhs()),
                 rhs_sequence.join(" ")
             )?;
         }

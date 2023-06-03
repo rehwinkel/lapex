@@ -3,9 +3,11 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroU32;
 
-use lapex_input::RuleSet;
+pub use codegen::ParserCodeGen;
 
 use crate::grammar::{Grammar, GrammarError, Symbol};
+
+mod codegen;
 
 fn get_follow_symbols_of_remainder(
     lhs: Option<Symbol>,
@@ -178,6 +180,23 @@ impl ParserTable {
         }
     }
 
+    pub fn get_production(&self, non_terminal: Symbol, terminal: &Symbol) -> Option<&Vec<Symbol>> {
+        if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
+            match terminal {
+                Symbol::Terminal(terminal_index) => {
+                    return self
+                        .table
+                        .get(&(non_terminal_index, NonZeroU32::new(terminal_index + 1)));
+                }
+                Symbol::End => {
+                    return self.table.get(&(non_terminal_index, None));
+                }
+                _ => (),
+            }
+        }
+        None
+    }
+
     fn check_for_conflict_and_insert(
         &mut self,
         non_terminal_index: u32,
@@ -228,14 +247,9 @@ impl ParserTable {
     }
 }
 
-pub fn generate_table(rule_set: &RuleSet) -> Result<ParserTable, LLParserError> {
-    let grammar = Grammar::from_rule_set(rule_set)?;
-    println!("{}", grammar);
+pub fn generate_table(grammar: &Grammar) -> Result<ParserTable, LLParserError> {
     let first_sets = compute_first_sets(&grammar);
     let follow_sets = compute_follow_sets(&grammar, &first_sets);
-    println!("{:?}", first_sets);
-    println!("{:?}", follow_sets);
-    // TODO: empty first sets
     let mut parser_table = ParserTable::new();
     for rule in grammar.rules() {
         let first_set_of_rhs = get_first_symbols_of_sequence(rule.rhs(), &first_sets);
