@@ -30,6 +30,32 @@ impl CppTableParserCodeGen {
         writeln!(output, "}};")
     }
 
+    fn write_non_terminal_visitor_call<W: Write>(
+        grammar: &Grammar,
+        is_exit: bool,
+        output: &mut W,
+    ) -> Result<(), Error> {
+        writeln!(output, "switch (non_terminal) {{")?;
+        for non_terminal in grammar.non_terminals() {
+            if let Some(name) = grammar.is_named_non_terminal(non_terminal) {
+                let index = (if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
+                    Some(non_terminal_index)
+                } else {
+                    None
+                })
+                .unwrap();
+                writeln!(output, "case {}:", index)?;
+                if is_exit {
+                    writeln!(output, "visitor.exit_{}();", name)?;
+                } else {
+                    writeln!(output, "visitor.enter_{}();", name)?;
+                }
+                writeln!(output, "break;")?;
+            }
+        }
+        writeln!(output, "}}")
+    }
+
     fn write_push_symbol_sequence<W: Write>(
         grammar: &Grammar,
         symbols: &[Symbol],
@@ -38,13 +64,17 @@ impl CppTableParserCodeGen {
         for (i, symbol) in symbols.iter().rev().enumerate() {
             match symbol {
                 Symbol::NonTerminal(non_terminal_index) => {
-                    writeln!(output, "Symbol sym{}{{false, {}}};", i, non_terminal_index)?;
+                    writeln!(
+                        output,
+                        "Symbol sym{}{{false, false, {}}};",
+                        i, non_terminal_index
+                    )?;
                     writeln!(output, "parse_stack.push(sym{});", i)?;
                 }
                 Symbol::Terminal(terminal_index) => {
                     writeln!(
                         output,
-                        "Symbol sym{}{{true, static_cast<uint32_t>(lexer::TokenType::TK_{})}};",
+                        "Symbol sym{}{{true, false, static_cast<uint32_t>(lexer::TokenType::TK_{})}};",
                         i,
                         grammar.get_token_name(*terminal_index)
                     )?;
@@ -138,6 +168,19 @@ impl ll_parser::ParserCodeGen for CppTableParserCodeGen {
         let mut visitor_code = Vec::new();
         CppTableParserCodeGen::write_visitor_class(grammar, &mut visitor_code)?;
 
+        let mut enter_switch_code = Vec::new();
+        let mut exit_switch_code = Vec::new();
+        CppTableParserCodeGen::write_non_terminal_visitor_call(
+            grammar,
+            false,
+            &mut enter_switch_code,
+        )?;
+        CppTableParserCodeGen::write_non_terminal_visitor_call(
+            grammar,
+            true,
+            &mut exit_switch_code,
+        )?;
+
         let entry_index = if let Symbol::NonTerminal(non_terminal_index) = grammar.entry_point() {
             non_terminal_index
         } else {
@@ -149,6 +192,14 @@ impl ll_parser::ParserCodeGen for CppTableParserCodeGen {
             .replace(
                 "/*INSERT_VISITOR*/",
                 std::str::from_utf8(&visitor_code).unwrap(),
+            )
+            .replace(
+                "/*EXIT_SWITCH*/",
+                std::str::from_utf8(&exit_switch_code).unwrap(),
+            )
+            .replace(
+                "/*ENTER_SWITCH*/",
+                std::str::from_utf8(&enter_switch_code).unwrap(),
             )
             .replace("/*INSERT_ENTRY*/", &format!("{}", entry_index));
         write!(output, "{}", replaced_template)
