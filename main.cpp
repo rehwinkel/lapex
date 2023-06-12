@@ -66,10 +66,7 @@ public:
 };
 
 int main() {
-  std::stringstream ss;
-  std::string contents = "!string!string?string";
-  ss.write(contents.c_str(), contents.size());
-  lexer::Lexer l(ss);
+  lexer::Lexer l(std::cin);
   MyVisitor vis;
   parser::Parser<TokenData> p(
       [&l]() {
