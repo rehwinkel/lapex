@@ -1,15 +1,14 @@
 use std::collections::HashSet;
 
-use lapex_automaton::Nfa;
-use petgraph::graph::NodeIndex;
+use lapex_automaton::{Nfa, StateId};
 
 use lapex_input::{Characters, Pattern, TokenRule};
 
 use crate::alphabet::Alphabet;
 
 fn build_nfa_from_pattern(
-    start: NodeIndex,
-    end: NodeIndex,
+    start: StateId,
+    end: StateId,
     alphabet: &Alphabet,
     nfa: &mut Nfa<String, usize>,
     pattern: &Pattern,
@@ -109,7 +108,7 @@ fn build_nfa_from_pattern(
     Some(())
 }
 
-pub fn generate_nfa(alphabet: &Alphabet, rules: &[TokenRule]) -> (NodeIndex, Nfa<String, usize>) {
+pub fn generate_nfa(alphabet: &Alphabet, rules: &[TokenRule]) -> (StateId, Nfa<String, usize>) {
     let mut nfa = Nfa::new();
 
     let start = nfa.add_intermediate_state();

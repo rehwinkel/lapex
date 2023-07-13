@@ -8,10 +8,12 @@ use petgraph::{
     graph::EdgeIndex,
     graph::NodeIndex,
     prelude::DiGraph,
-    visit::{EdgeRef, IntoEdgesDirected, IntoNodeReferences},
+    visit::{EdgeRef, IntoNodeReferences},
     Direction::Outgoing,
     Graph,
 };
+
+pub type StateId = NodeIndex;
 
 pub enum AutomatonState<StateType> {
     Accepting(StateType),
@@ -54,7 +56,7 @@ impl<StateType, TransitionType> Nfa<StateType, TransitionType> {
         }
     }
 
-    pub fn add_intermediate_state(&mut self) -> NodeIndex {
+    pub fn add_intermediate_state(&mut self) -> StateId {
         let added_node = self
             .graph
             .add_node(AutomatonState::Intermediate(self.intermediate_counter));
@@ -63,18 +65,18 @@ impl<StateType, TransitionType> Nfa<StateType, TransitionType> {
         added_node
     }
 
-    pub fn add_accepting_state(&mut self, state: StateType) -> NodeIndex {
+    pub fn add_accepting_state(&mut self, state: StateType) -> StateId {
         self.graph.add_node(AutomatonState::Accepting(state))
     }
 
-    pub fn add_epsilon_transition(&mut self, start: NodeIndex, end: NodeIndex) -> EdgeIndex {
+    pub fn add_epsilon_transition(&mut self, start: StateId, end: StateId) -> EdgeIndex {
         self.graph.add_edge(start, end, NfaEdge::Epsilon)
     }
 
     pub fn add_transition(
         &mut self,
-        start: NodeIndex,
-        end: NodeIndex,
+        start: StateId,
+        end: StateId,
         transition: TransitionType,
     ) -> EdgeIndex {
         self.graph
@@ -95,7 +97,7 @@ impl<StateType, TransitionType> Dfa<StateType, TransitionType> {
         }
     }
 
-    pub fn add_intermediate_state(&mut self) -> NodeIndex {
+    pub fn add_intermediate_state(&mut self) -> StateId {
         let added_node = self
             .graph
             .add_node(AutomatonState::Intermediate(self.intermediate_counter));
@@ -104,27 +106,27 @@ impl<StateType, TransitionType> Dfa<StateType, TransitionType> {
         added_node
     }
 
-    pub fn add_accepting_state(&mut self, state: StateType) -> NodeIndex {
+    pub fn add_accepting_state(&mut self, state: StateType) -> StateId {
         self.graph.add_node(AutomatonState::Accepting(state))
     }
 
     pub fn add_transition(
         &mut self,
-        start: NodeIndex,
-        end: NodeIndex,
+        start: StateId,
+        end: StateId,
         transition: TransitionType,
     ) -> EdgeIndex {
         self.graph.add_edge(start, end, transition)
     }
 
-    pub fn states(&self) -> impl Iterator<Item = (NodeIndex, &AutomatonState<StateType>)> {
+    pub fn states(&self) -> impl Iterator<Item = (StateId, &AutomatonState<StateType>)> {
         self.graph.node_references()
     }
 
     pub fn transitions_from(
         &self,
-        node: NodeIndex,
-    ) -> impl Iterator<Item = (&TransitionType, NodeIndex)> {
+        node: StateId,
+    ) -> impl Iterator<Item = (&TransitionType, StateId)> {
         self.graph
             .edges_directed(node, Outgoing)
             .map(|eref| (eref.weight(), eref.target()))
@@ -132,7 +134,7 @@ impl<StateType, TransitionType> Dfa<StateType, TransitionType> {
 }
 
 impl<StateType: Clone, TransitionType: Clone + Eq + Hash> Nfa<StateType, TransitionType> {
-    fn epsilon_closure(&self, start_nodes: Vec<NodeIndex>, closure: &mut HashSet<NodeIndex>) {
+    fn epsilon_closure(&self, start_nodes: Vec<StateId>, closure: &mut HashSet<StateId>) {
         for start_node in start_nodes {
             closure.insert(start_node);
             let edges = self
@@ -151,14 +153,14 @@ impl<StateType: Clone, TransitionType: Clone + Eq + Hash> Nfa<StateType, Transit
 
     fn add_powerset_to_dfa(
         &self,
-        dfa: &mut Graph<HashSet<NodeIndex>, TransitionType>,
-        nodes: Vec<NodeIndex>,
-    ) -> NodeIndex {
+        dfa: &mut Graph<HashSet<StateId>, TransitionType>,
+        nodes: Vec<StateId>,
+    ) -> StateId {
         let mut closure = HashSet::new(); // TODO: test perf of different data structures
         self.epsilon_closure(nodes, &mut closure);
 
         // find an existing node with the same powerset
-        let node_dfa_opt: Option<NodeIndex> = dfa
+        let node_dfa_opt: Option<StateId> = dfa
             .node_references()
             .find(|(_, w)| w == &&closure)
             .map(|(i, _)| i);
@@ -169,7 +171,7 @@ impl<StateType: Clone, TransitionType: Clone + Eq + Hash> Nfa<StateType, Transit
             // if the powerset is new, add it to the graph and recurse
             let node_dfa = dfa.add_node(closure.clone());
 
-            let mut target_multi_map: HashMap<TransitionType, Vec<NodeIndex>> = HashMap::new();
+            let mut target_multi_map: HashMap<TransitionType, Vec<StateId>> = HashMap::new();
             for node in closure {
                 let edges = self
                     .graph
@@ -194,12 +196,12 @@ impl<StateType: Clone, TransitionType: Clone + Eq + Hash> Nfa<StateType, Transit
 
     fn convert_powerset_to_dfa(
         &self,
-        powerset_dfa: &Graph<HashSet<NodeIndex>, TransitionType>,
+        powerset_dfa: &Graph<HashSet<StateId>, TransitionType>,
         tmp_id: &mut usize,
         dfa: &mut Dfa<Vec<StateType>, TransitionType>,
-        visited: &mut HashMap<NodeIndex, NodeIndex>,
-        node: NodeIndex,
-    ) -> NodeIndex {
+        visited: &mut HashMap<StateId, StateId>,
+        node: StateId,
+    ) -> StateId {
         let mut accepts = Vec::new();
         let powerset = powerset_dfa.node_weight(node).unwrap();
         for nfa_index in powerset {
@@ -228,9 +230,9 @@ impl<StateType: Clone, TransitionType: Clone + Eq + Hash> Nfa<StateType, Transit
 
     pub fn powerset_construction(
         &self,
-        entrypoint: NodeIndex,
+        entrypoint: StateId,
     ) -> Dfa<Vec<StateType>, TransitionType> {
-        let mut powerset_dfa: Graph<HashSet<NodeIndex>, TransitionType> = DiGraph::new();
+        let mut powerset_dfa: Graph<HashSet<StateId>, TransitionType> = DiGraph::new();
 
         let start_dfa = self.add_powerset_to_dfa(&mut powerset_dfa, vec![entrypoint]);
 

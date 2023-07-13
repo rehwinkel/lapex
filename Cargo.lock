@@ -71,7 +71,6 @@ version = "0.1.0"
 dependencies = [
  "lapex-automaton",
  "lapex-input",
- "petgraph",
 ]
 
 [[package]]
