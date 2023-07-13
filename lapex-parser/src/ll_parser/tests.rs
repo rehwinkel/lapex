@@ -1,4 +1,4 @@
-use crate::grammar::Symbol;
+use crate::grammar::{Grammar, Symbol};
 use crate::ll_parser::LLParserError;
 
 use super::{generate_table, ParserTable};
@@ -14,7 +14,8 @@ fn test_generate_table_valid() {
     prod sum = NUMBER ((PLUS | MINUS) NUMBER)*;
     "#;
     let rules = lapex_input::parse_lapex_file(grammar.as_bytes()).unwrap();
-    let table = generate_table(&rules).unwrap();
+    let grammar = Grammar::from_rule_set(&rules).unwrap();
+    let table = generate_table(&grammar).unwrap();
     let mut target_table = ParserTable::new();
     target_table
         .insert(
@@ -76,8 +77,9 @@ fn test_generate_table_first_conflict() {
     prod x = (A B | A C);
     "#;
     let rules = lapex_input::parse_lapex_file(grammar.as_bytes()).unwrap();
+    let grammar = Grammar::from_rule_set(&rules).unwrap();
     assert_eq!(
-        generate_table(&rules),
+        generate_table(&grammar),
         Err(LLParserError::ParserTableConflict {
             non_terminal: Symbol::NonTerminal(1),
             terminal: Symbol::Terminal(0),
@@ -100,8 +102,9 @@ fn test_generate_table_first_follow_conflict() {
     prod z = A C;
     "#;
     let rules = lapex_input::parse_lapex_file(grammar.as_bytes()).unwrap();
+    let grammar = Grammar::from_rule_set(&rules).unwrap();
     assert_eq!(
-        generate_table(&rules),
+        generate_table(&grammar),
         Err(LLParserError::ParserTableConflict {
             non_terminal: Symbol::NonTerminal(3),
             terminal: Symbol::Terminal(0),
@@ -124,8 +127,9 @@ fn test_generate_table_follow_conflict() {
     prod z = (B)?;
     "#;
     let rules = lapex_input::parse_lapex_file(grammar.as_bytes()).unwrap();
+    let grammar = Grammar::from_rule_set(&rules).unwrap();
     assert_eq!(
-        generate_table(&rules),
+        generate_table(&grammar),
         Err(LLParserError::ParserTableConflict {
             non_terminal: Symbol::NonTerminal(1),
             terminal: Symbol::Terminal(2),
