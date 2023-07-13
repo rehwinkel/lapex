@@ -1,11 +1,10 @@
 use std::io::Write;
 use std::ops::RangeInclusive;
 
-use petgraph::visit::{EdgeRef, IntoNodeReferences};
-use petgraph::Outgoing;
+use lapex_automaton::{AutomatonState, Dfa};
 
 use lapex_input::TokenRule;
-use lapex_lexer::{Dfa, DfaState, LexerCodeGen};
+use lapex_lexer::LexerCodeGen;
 
 use crate::CppLexerCodeGen;
 
@@ -90,12 +89,12 @@ impl CppLexerCodeGen {
     }
 
     fn write_state_machine_switch<W: Write>(
-        dfa: &Dfa,
+        dfa: &Dfa<Vec<String>, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         writeln!(output, "switch (state)")?;
         writeln!(output, "{{")?;
-        for (index, node) in dfa.node_references() {
+        for (index, node) in dfa.states() {
             writeln!(output, "case {}:", index.index())?;
             writeln!(output, "switch (i)")?;
             writeln!(output, "{{")?;
@@ -103,16 +102,16 @@ impl CppLexerCodeGen {
                 writeln!(output, "case 0: ")?;
                 writeln!(output, "return TokenType::TK_EOF;")?;
             }
-            for edge in dfa.edges_directed(index, Outgoing) {
-                if *edge.weight() != 0 {
-                    writeln!(output, "case {}: ", edge.weight())?;
+            for (transition, target) in dfa.transitions_from(index) {
+                if *transition != 0 {
+                    writeln!(output, "case {}: ", transition)?;
                     writeln!(output, "this->ch = -1;")?;
-                    writeln!(output, "state = {};", edge.target().index())?;
+                    writeln!(output, "state = {};", target.index())?;
                     writeln!(output, "break;")?;
                 }
             }
             writeln!(output, "default:")?;
-            if let DfaState::Accepting { accepts } = node {
+            if let AutomatonState::Accepting(accepts) = node {
                 writeln!(output, "// ACCEPT: {:?}", accepts)?;
                 writeln!(output, "this->end_pos = this->position;")?;
                 writeln!(output, "return TokenType::TK_{};", accepts[0])?;
@@ -138,7 +137,7 @@ impl LexerCodeGen for CppLexerCodeGen {
         &self,
         rules: &[TokenRule],
         _alphabet: &[RangeInclusive<u32>],
-        _dfa: &Dfa,
+        _dfa: &Dfa<Vec<String>, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         writeln!(output, "#pragma once")?;
@@ -158,7 +157,7 @@ impl LexerCodeGen for CppLexerCodeGen {
         &self,
         rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
-        dfa: &Dfa,
+        dfa: &Dfa<Vec<String>, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         let mut switch_code = Vec::new();

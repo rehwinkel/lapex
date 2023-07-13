@@ -2,6 +2,7 @@
 members = [
     "lapex",
     "lapex-input",
+    "lapex-automaton",
     "lapex-lexer",
     "lapex-parser",
     "lapex-cpp-codegen"

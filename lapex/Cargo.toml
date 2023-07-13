@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+lapex-automaton = { path = "../lapex-automaton" }
 lapex-lexer = { path = "../lapex-lexer" }
 lapex-parser = { path = "../lapex-parser" }
 lapex-input = { path = "../lapex-input" }

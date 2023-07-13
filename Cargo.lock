@@ -34,6 +34,7 @@ dependencies = [
 name = "lapex"
 version = "0.1.0"
 dependencies = [
+ "lapex-automaton",
  "lapex-cpp-codegen",
  "lapex-input",
  "lapex-lexer",
@@ -41,13 +42,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lapex-automaton"
+version = "0.1.0"
+dependencies = [
+ "petgraph",
+]
+
+[[package]]
 name = "lapex-cpp-codegen"
 version = "0.1.0"
 dependencies = [
+ "lapex-automaton",
  "lapex-input",
  "lapex-lexer",
  "lapex-parser",
- "petgraph",
 ]
 
 [[package]]
@@ -61,6 +69,7 @@ dependencies = [
 name = "lapex-lexer"
 version = "0.1.0"
 dependencies = [
+ "lapex-automaton",
  "lapex-input",
  "petgraph",
 ]
@@ -70,7 +79,6 @@ name = "lapex-parser"
 version = "0.1.0"
 dependencies = [
  "lapex-input",
- "petgraph",
 ]
 
 [[package]]

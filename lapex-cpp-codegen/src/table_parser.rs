@@ -1,7 +1,5 @@
 use std::io::{Error, Write};
 
-use petgraph::visit::Walker;
-
 use lapex_parser::grammar::{Grammar, Symbol};
 use lapex_parser::ll_parser;
 use lapex_parser::ll_parser::ParserTable;

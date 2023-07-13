@@ -1,8 +1,7 @@
 use std::{io::Write, ops::RangeInclusive};
 
+use lapex_automaton::Dfa;
 use lapex_input::TokenRule;
-
-use crate::Dfa;
 
 pub trait LexerCodeGen {
     fn has_header(&self) -> bool;
@@ -11,7 +10,7 @@ pub trait LexerCodeGen {
         &self,
         rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
-        dfa: &Dfa,
+        dfa: &Dfa<Vec<String>, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error>;
 
@@ -19,7 +18,7 @@ pub trait LexerCodeGen {
         &self,
         rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
-        dfa: &Dfa,
+        dfa: &Dfa<Vec<String>, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error>;
 }
