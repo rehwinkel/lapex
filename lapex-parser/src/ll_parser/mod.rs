@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroU32;
 
-pub use codegen::ParserCodeGen;
+pub use codegen::TableParserCodeGen;
 
 use crate::grammar::{Grammar, GrammarError, Symbol};
 
@@ -48,7 +48,7 @@ fn compute_follow_sets(
         let all_rules = std::iter::once((None, &terminated_entry_point_rhs)).chain(grammar_rules);
         let mut inserted_any = false;
         for rule in all_rules {
-            let lhs = rule.0;
+            let lhs = rule.0.unwrap();
             let sequence = rule.1;
             for i in 0..sequence.len() {
                 let symbol = &sequence[i];
@@ -127,7 +127,7 @@ fn compute_first_sets(grammar: &Grammar) -> HashMap<Symbol, HashSet<Symbol>> {
         let mut inserted_any = false;
         for rule in grammar.rules() {
             let first_for_rhs = get_first_symbols_of_sequence(rule.rhs(), &first_sets);
-            let first_set_of_lhs = first_sets.get_mut(&rule.lhs()).unwrap();
+            let first_set_of_lhs = first_sets.get_mut(&rule.lhs().unwrap()).unwrap();
             for symbol in first_for_rhs {
                 let was_inserted = first_set_of_lhs.insert(symbol);
                 inserted_any = inserted_any || was_inserted;
@@ -169,13 +169,13 @@ impl Display for LLParserError {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ParserTable {
+pub struct LLParserTable {
     table: HashMap<(u32, Option<NonZeroU32>), Vec<Symbol>>,
 }
 
-impl ParserTable {
+impl LLParserTable {
     fn new() -> Self {
-        ParserTable {
+        LLParserTable {
             table: HashMap::new(),
         }
     }
@@ -247,26 +247,26 @@ impl ParserTable {
     }
 }
 
-pub fn generate_table(grammar: &Grammar) -> Result<ParserTable, LLParserError> {
+pub fn generate_table(grammar: &Grammar) -> Result<LLParserTable, LLParserError> {
     let first_sets = compute_first_sets(&grammar);
     let follow_sets = compute_follow_sets(&grammar, &first_sets);
-    let mut parser_table = ParserTable::new();
+    let mut parser_table = LLParserTable::new();
     for rule in grammar.rules() {
         let first_set_of_rhs = get_first_symbols_of_sequence(rule.rhs(), &first_sets);
         for symbol in first_set_of_rhs.iter() {
             match symbol {
                 Symbol::End | Symbol::Terminal(_) => {
-                    parser_table.insert(rule.lhs(), *symbol, rule.rhs().clone())?;
+                    parser_table.insert(rule.lhs().unwrap(), *symbol, rule.rhs().clone())?;
                 }
                 _ => (),
             }
         }
         if first_set_of_rhs.contains(&Symbol::Epsilon) {
-            let follow_set_of_lhs = follow_sets.get(&rule.lhs()).unwrap();
+            let follow_set_of_lhs = follow_sets.get(&rule.lhs().unwrap()).unwrap();
             for symbol in follow_set_of_lhs.iter() {
                 match symbol {
                     Symbol::End | Symbol::Terminal(_) => {
-                        parser_table.insert(rule.lhs(), *symbol, rule.rhs().clone())?;
+                        parser_table.insert(rule.lhs().unwrap(), *symbol, rule.rhs().clone())?;
                     }
                     _ => (),
                 }

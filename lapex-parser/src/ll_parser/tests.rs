@@ -1,7 +1,7 @@
 use crate::grammar::{Grammar, Symbol};
 use crate::ll_parser::LLParserError;
 
-use super::{generate_table, ParserTable};
+use super::{generate_table, LLParserTable};
 
 #[test]
 fn test_generate_table_valid() {
@@ -16,7 +16,7 @@ fn test_generate_table_valid() {
     let rules = lapex_input::parse_lapex_file(grammar.as_bytes()).unwrap();
     let grammar = Grammar::from_rule_set(&rules).unwrap();
     let table = generate_table(&grammar).unwrap();
-    let mut target_table = ParserTable::new();
+    let mut target_table = LLParserTable::new();
     target_table
         .insert(
             Symbol::NonTerminal(0),

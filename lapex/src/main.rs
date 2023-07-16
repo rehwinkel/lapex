@@ -5,10 +5,10 @@ use lapex_automaton::Dfa;
 use lapex_input::TokenRule;
 use lapex_lexer::LexerCodeGen;
 use lapex_parser::grammar::Grammar;
-use lapex_parser::ll_parser::{ParserCodeGen, ParserTable};
+use lapex_parser::ll_parser::{LLParserTable, TableParserCodeGen};
 
 fn main() {
-    let path = "example/test1.lapex";
+    let path = "example/test5.lapex";
     let target_path = "generated";
     let file_contents = std::fs::read(path).unwrap();
     let rules = lapex_input::parse_lapex_file(&file_contents).unwrap();
@@ -23,12 +23,13 @@ fn main() {
     );
     let grammar = Grammar::from_rule_set(&rules).unwrap();
     println!("{}", grammar);
-    let parser_table = lapex_parser::ll_parser::generate_table(&grammar).unwrap();
-    println!("{:?}", parser_table);
-    generate_cpp_parser(&grammar, &parser_table, Path::new(target_path));
+    // let parser_table =
+    lapex_parser::lr_parser::generate_table(&grammar);
+    // println!("{:?}", parser_table);
+    // generate_cpp_parser(&grammar, &parser_table, Path::new(target_path));
 }
 
-fn generate_cpp_parser(grammar: &Grammar, table: &ParserTable, target_path: &Path) {
+fn generate_cpp_parser(grammar: &Grammar, table: &LLParserTable, target_path: &Path) {
     let cpp_codegen = lapex_cpp_codegen::CppTableParserCodeGen::new();
     if cpp_codegen.has_header() {
         let mut lexer_h = std::fs::File::create(target_path.join("parser.h")).unwrap();

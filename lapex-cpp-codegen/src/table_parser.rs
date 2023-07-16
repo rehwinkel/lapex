@@ -2,7 +2,7 @@ use std::io::{Error, Write};
 
 use lapex_parser::grammar::{Grammar, Symbol};
 use lapex_parser::ll_parser;
-use lapex_parser::ll_parser::ParserTable;
+use lapex_parser::ll_parser::LLParserTable;
 
 use crate::CppTableParserCodeGen;
 
@@ -112,7 +112,7 @@ impl CppTableParserCodeGen {
 
     fn write_table_switch<W: Write>(
         grammar: &Grammar,
-        parser_table: &ParserTable,
+        parser_table: &LLParserTable,
         output: &mut W,
     ) -> Result<(), Error> {
         writeln!(output, "switch(non_terminal.identifier) {{")?;
@@ -152,7 +152,7 @@ impl CppTableParserCodeGen {
     }
 }
 
-impl ll_parser::ParserCodeGen for CppTableParserCodeGen {
+impl ll_parser::TableParserCodeGen for CppTableParserCodeGen {
     fn has_header(&self) -> bool {
         true
     }
@@ -160,7 +160,7 @@ impl ll_parser::ParserCodeGen for CppTableParserCodeGen {
     fn generate_header<W: Write>(
         &self,
         grammar: &Grammar,
-        _parser_table: &ParserTable,
+        _parser_table: &LLParserTable,
         output: &mut W,
     ) -> Result<(), Error> {
         let mut visitor_code = Vec::new();
@@ -206,7 +206,7 @@ impl ll_parser::ParserCodeGen for CppTableParserCodeGen {
     fn generate_source<W: Write>(
         &self,
         grammar: &Grammar,
-        parser_table: &ParserTable,
+        parser_table: &LLParserTable,
         output: &mut W,
     ) -> Result<(), Error> {
         let mut table_switch_code = Vec::new();

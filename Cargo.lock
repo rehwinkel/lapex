@@ -78,6 +78,7 @@ name = "lapex-parser"
 version = "0.1.0"
 dependencies = [
  "lapex-input",
+ "petgraph",
 ]
 
 [[package]]
