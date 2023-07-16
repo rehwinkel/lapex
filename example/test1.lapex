@@ -6,6 +6,6 @@ token STRING = "string";
 
 entry Session;
 prod Session = (Facts Question | LPA Session RPA Session);
-prod Facts = (Fact Facts)?;
+prod Facts = Fact*;
 prod Fact = EXC STRING;
 prod Question = QUE STRING;
