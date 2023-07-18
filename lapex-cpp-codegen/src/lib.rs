@@ -1,4 +1,6 @@
-pub struct CppLexerCodeGen {}
+pub struct CppLexerCodeGen {
+    template: tinytemplate::TinyTemplate<'static>,
+}
 
 impl Default for CppLexerCodeGen {
     fn default() -> Self {

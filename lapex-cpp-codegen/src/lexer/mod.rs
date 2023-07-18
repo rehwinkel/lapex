@@ -5,45 +5,30 @@ use lapex_automaton::{AutomatonState, Dfa};
 
 use lapex_input::TokenRule;
 use lapex_lexer::LexerCodeGen;
+use serde::Serialize;
 
 use crate::CppLexerCodeGen;
 
 impl CppLexerCodeGen {
     pub fn new() -> Self {
-        CppLexerCodeGen {}
+        let mut template = tinytemplate::TinyTemplate::new();
+        template.set_default_formatter(&tinytemplate::format_unescaped);
+        template
+            .add_template("lexer_header", include_str!("lexer_header.tpl"))
+            .unwrap();
+        template
+            .add_template("lexer_impl", include_str!("lexer_impl.tpl"))
+            .unwrap();
+        CppLexerCodeGen { template }
     }
 
-    fn write_token_enum<W: Write>(
+    fn write_token_enum_variants<W: Write>(
         rules: &[TokenRule],
         output: &mut W,
     ) -> Result<(), std::io::Error> {
-        writeln!(output, "enum class TokenType : uint32_t")?;
-        writeln!(output, "{{")?;
-        writeln!(output, "    TK_ERR = 0,")?;
-        writeln!(output, "    TK_EOF = 1,")?;
         for rule in rules {
-            writeln!(output, "    TK_{},", rule.token())?;
+            writeln!(output, "TK_{},", rule.token())?;
         }
-        writeln!(output, "}};")?;
-        writeln!(output, "const char* get_token_name(TokenType tk_type);")?;
-        Ok(())
-    }
-
-    fn write_lexer_class<W: Write>(output: &mut W) -> Result<(), std::io::Error> {
-        writeln!(output, "class Lexer")?;
-        writeln!(output, "{{")?;
-        writeln!(output, "std::istream& in_chars;")?;
-        writeln!(output, "uint32_t ch;")?;
-        writeln!(output, "int err;")?;
-        writeln!(output, "size_t position;")?;
-        writeln!(output, "size_t start_pos;")?;
-        writeln!(output, "size_t end_pos;")?;
-        writeln!(output, "public:")?;
-        writeln!(output, "Lexer(std::istream& in_chars);")?;
-        writeln!(output, "TokenType next();")?;
-        writeln!(output, "size_t start();")?;
-        writeln!(output, "size_t end();")?;
-        writeln!(output, "}};")?;
         Ok(())
     }
 
@@ -128,6 +113,18 @@ impl CppLexerCodeGen {
     }
 }
 
+#[derive(Serialize)]
+struct LexerTemplateContext {
+    token_enum_variants: String,
+}
+
+#[derive(Serialize)]
+struct LexerImplTemplateContext {
+    get_token_name_function: String,
+    alphabet_switch: String,
+    automaton_switch: String,
+}
+
 impl LexerCodeGen for CppLexerCodeGen {
     fn has_header(&self) -> bool {
         true
@@ -140,17 +137,19 @@ impl LexerCodeGen for CppLexerCodeGen {
         _dfa: &Dfa<Vec<String>, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
-        writeln!(output, "#pragma once")?;
-        writeln!(output)?;
-        writeln!(output, "#include <istream>")?;
-        writeln!(output, "#include <cstdint>")?;
-        writeln!(output)?;
-        writeln!(output, "namespace lexer")?;
-        writeln!(output, "{{")?;
-        CppLexerCodeGen::write_token_enum(rules, output)?;
-        writeln!(output)?;
-        CppLexerCodeGen::write_lexer_class(output)?;
-        writeln!(output, "}}")
+        let mut token_enum_variants = Vec::new();
+        CppLexerCodeGen::write_token_enum_variants(rules, &mut token_enum_variants)?;
+        let context = LexerTemplateContext {
+            token_enum_variants: String::from_utf8(token_enum_variants).unwrap(),
+        };
+
+        writeln!(
+            output,
+            "{}",
+            self.template
+                .render("lexer_header", &context)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        )
     }
 
     fn generate_source<W: Write>(
@@ -160,24 +159,27 @@ impl LexerCodeGen for CppLexerCodeGen {
         dfa: &Dfa<Vec<String>, usize>,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
-        let mut switch_code = Vec::new();
+        let mut alphabet_switch = Vec::new();
+        let mut automaton_switch = Vec::new();
 
-        CppLexerCodeGen::write_alphabet_switch(alphabet, &mut switch_code)?;
-        CppLexerCodeGen::write_state_machine_switch(dfa, &mut switch_code)?;
+        CppLexerCodeGen::write_alphabet_switch(alphabet, &mut alphabet_switch)?;
+        CppLexerCodeGen::write_state_machine_switch(dfa, &mut automaton_switch)?;
 
-        let mut token_name_code = Vec::new();
-        CppLexerCodeGen::write_get_token_name_function(rules, &mut token_name_code)?;
+        let mut get_token_name_function = Vec::new();
+        CppLexerCodeGen::write_get_token_name_function(rules, &mut get_token_name_function)?;
 
-        let lexer_cpp_template = include_str!("lexer.cpp");
-        let replaced_template = lexer_cpp_template
-            .replace(
-                "/*INSERT_SWITCH*/",
-                std::str::from_utf8(&switch_code).unwrap(),
-            )
-            .replace(
-                "/*INSERT_TOKEN_NAME*/",
-                std::str::from_utf8(&token_name_code).unwrap(),
-            );
-        write!(output, "{}", replaced_template)
+        let context = LexerImplTemplateContext {
+            alphabet_switch: String::from_utf8(alphabet_switch).unwrap(),
+            automaton_switch: String::from_utf8(automaton_switch).unwrap(),
+            get_token_name_function: String::from_utf8(get_token_name_function).unwrap(),
+        };
+
+        writeln!(
+            output,
+            "{}",
+            self.template
+                .render("lexer_impl", &context)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        )
     }
 }
