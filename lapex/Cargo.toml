@@ -2,8 +2,10 @@
 name = "lapex"
 version = "0.1.0"
 edition = "2021"
+author = "Ian Rehwinkel <ian.rehwinkel@tutanota.com>"
 
 [dependencies]
+clap = { version = "4.3.16", features = ["derive"] }
 lapex-automaton = { path = "../lapex-automaton" }
 lapex-lexer = { path = "../lapex-lexer" }
 lapex-parser = { path = "../lapex-parser" }
