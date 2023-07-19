@@ -47,12 +47,15 @@ fn expand_item<'grammar>(item: Item<'grammar>, grammar: &'grammar Grammar) -> It
 struct ParserGraph<'grammar> {
     state_map: BidiMap<ItemSet<'grammar>, NodeIndex>,
     graph: Graph<(), Symbol>,
+    entry_state: Option<NodeIndex>,
 }
+
 impl<'grammar> ParserGraph<'grammar> {
     fn new() -> Self {
         ParserGraph {
             state_map: BidiMap::new(),
             graph: DiGraph::new(),
+            entry_state: None,
         }
     }
 
@@ -85,6 +88,7 @@ fn generate_parser_graph<'grammar>(grammar: &'grammar Grammar) -> ParserGraph<'g
     let entry_item_set = expand_item(entry_item, grammar);
     let mut parser_graph = ParserGraph::new();
     let entry_state = parser_graph.add_state(entry_item_set);
+    parser_graph.entry_state = Some(entry_state);
 
     let mut unprocessed_states = Vec::new();
     unprocessed_states.push(entry_state);
@@ -157,117 +161,120 @@ fn find_conflicts<'grammar>(parser_graph: &ParserGraph<'grammar>) -> Vec<Conflic
 }
 
 #[derive(Clone, Debug)]
-enum TableEntry {
+pub enum TableEntry<'grammar> {
     Shift { target: usize },
-    Reduce { rule: Rule },
+    Reduce { rule: &'grammar Rule },
     Error,
-    None,
 }
 
-impl Display for TableEntry {
+impl<'grammar> Display for TableEntry<'grammar> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TableEntry::Shift { target } => write!(f, "s{}", target),
             TableEntry::Reduce { rule } => write!(f, "r{:?}", rule),
             TableEntry::Error => write!(f, "er"),
-            TableEntry::None => write!(f, "  "),
         }
     }
 }
 
 #[derive(Debug)]
-pub struct ActionGotoTable {
-    entries: Vec<TableEntry>,
-    terminal_count: usize,
-    non_terminal_count: usize,
+pub struct ActionGotoTable<'grammar> {
+    entries: HashMap<(usize, Symbol), TableEntry<'grammar>>,
+    state_count: usize,
+    entry_state: usize,
 }
 
-impl Display for ActionGotoTable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let states = self.entries.len() / (self.terminal_count + self.non_terminal_count);
-        write!(f, "  ")?;
-        for token in 0..self.terminal_count {
-            write!(f, "  T{}", token)?;
-        }
-        for non_terminal in 0..self.non_terminal_count {
-            write!(f, "  N{}", non_terminal)?;
-        }
-        writeln!(f, "")?;
-        for state in 0..states {
-            write!(f, "S{}", state)?;
-            for token in 0..self.terminal_count {
-                let entry = self.get_entry(state, Symbol::Terminal(token as u32));
-                write!(f, "  {}", entry)?;
-            }
-            for non_terminal in 0..self.non_terminal_count {
-                let entry = self.get_entry(state, Symbol::NonTerminal(non_terminal as u32));
-                write!(f, "  {}", entry)?;
-            }
-            writeln!(f, "")?;
-        }
-        write!(f, "")
-    }
-}
-
-impl ActionGotoTable {
-    fn new(terminal_count: usize, non_terminal_count: usize, node_count: usize) -> Self {
+impl<'grammar> ActionGotoTable<'grammar> {
+    fn new(state_count: usize, entry_state: usize) -> Self {
         ActionGotoTable {
-            entries: vec![TableEntry::None; (terminal_count + non_terminal_count) * node_count],
-            terminal_count,
-            non_terminal_count,
+            entries: HashMap::new(),
+            state_count,
+            entry_state,
         }
     }
 
-    fn get_entry_mut(&mut self, state: usize, symbol: Symbol) -> &mut TableEntry {
-        let symbol = match symbol {
-            Symbol::Terminal(t) => t as usize,
-            Symbol::NonTerminal(t) => t as usize + self.terminal_count,
-            _ => unreachable!(),
-        };
-        &mut self.entries[state * (self.terminal_count + self.non_terminal_count) + symbol]
-    }
-    fn get_entry(&self, state: usize, symbol: Symbol) -> &TableEntry {
-        let symbol = match symbol {
-            Symbol::Terminal(t) => t as usize,
-            Symbol::NonTerminal(t) => t as usize + self.terminal_count,
-            _ => unreachable!(),
-        };
-        &self.entries[state * (self.terminal_count + self.non_terminal_count) + symbol]
+    pub fn get_entry(&self, state: usize, symbol: Symbol) -> Option<&TableEntry> {
+        self.entries.get(&(state, symbol))
     }
 
-    fn insert_reduce(&mut self, state: NodeIndex, symbol: Symbol, rule: Rule) {
-        *self.get_entry_mut(state.index(), symbol) = TableEntry::Reduce { rule };
+    pub fn iter_state_terminals(
+        &self,
+        state: usize,
+        grammar: &'grammar Grammar,
+    ) -> impl Iterator<Item = (Symbol, Option<&TableEntry>)> {
+        grammar
+            .terminals()
+            .chain(std::iter::once(Symbol::End))
+            .map(move |s| (s, self.get_entry(state, s)))
+    }
+
+    pub fn iter_state_non_terminals(
+        &self,
+        state: usize,
+        grammar: &'grammar Grammar,
+    ) -> impl Iterator<Item = (Symbol, Option<&TableEntry>)> {
+        grammar
+            .non_terminals()
+            .map(move |s| (s, self.get_entry(state, s)))
+    }
+
+    pub fn entry_state(&self) -> usize {
+        self.entry_state
+    }
+
+    pub fn states(&self) -> usize {
+        self.state_count
+    }
+
+    fn insert_reduce(&mut self, state: NodeIndex, symbol: Symbol, rule: &'grammar Rule) {
+        self.entries
+            .insert((state.index(), symbol), TableEntry::Reduce { rule });
     }
 
     fn insert_shift(&mut self, state: NodeIndex, symbol: Symbol, target: NodeIndex) {
-        *self.get_entry_mut(state.index(), symbol) = TableEntry::Shift {
-            target: target.index(),
-        };
+        self.entries.insert(
+            (state.index(), symbol),
+            TableEntry::Shift {
+                target: target.index(),
+            },
+        );
     }
 
     fn insert_error(&mut self, state: NodeIndex, symbol: Symbol) {
-        *self.get_entry_mut(state.index(), symbol) = TableEntry::Error;
+        self.entries
+            .insert((state.index(), symbol), TableEntry::Error);
+    }
+
+    pub fn state_has_shift(&self, state: usize, grammar: &'grammar Grammar) -> bool {
+        self.iter_state_non_terminals(state, grammar)
+            .chain(self.iter_state_terminals(state, grammar))
+            .any(|(_s, e)| {
+                if let Some(TableEntry::Shift { target: _ }) = e {
+                    true
+                } else {
+                    false
+                }
+            })
     }
 }
 
 pub fn generate_table<'grammar>(
     grammar: &'grammar Grammar,
-) -> Result<ActionGotoTable, Vec<Conflict<'grammar>>> {
+) -> Result<ActionGotoTable<'grammar>, Vec<Conflict<'grammar>>> {
     let parser_graph = generate_parser_graph(grammar);
     let conflicts = find_conflicts(&parser_graph);
     if !conflicts.is_empty() {
         return Err(conflicts);
     }
 
-    let terminal_count = grammar.terminals().count();
-    let non_terminal_count = grammar.non_terminals().count();
     let node_count = parser_graph.graph.node_indices().count();
-    let mut table = ActionGotoTable::new(terminal_count, non_terminal_count, node_count);
+    let mut table: ActionGotoTable<'grammar> =
+        ActionGotoTable::new(node_count, parser_graph.entry_state.unwrap().index());
     'states: for (item_set, state) in parser_graph.state_map.iter() {
         for item in item_set {
             if item.symbol_after_dot().is_none() {
-                for symbol in grammar.symbols() {
-                    table.insert_reduce(*state, symbol, item.rule().clone())
+                for symbol in grammar.symbols().chain(std::iter::once(Symbol::End)) {
+                    table.insert_reduce(*state, symbol, item.rule())
                 }
                 continue 'states;
             }

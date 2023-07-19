@@ -8,6 +8,19 @@
 
 namespace parser
 \{
+    enum class SymbolKind : uint8_t
+    \{
+        Terminal,
+        NonTerminal,
+        ExitNonTerminal
+    };
+
+    struct Symbol
+    \{
+        SymbolKind kind;
+        uint32_t identifier;
+    };
+    
     void push_production_from_table(Symbol non_terminal, lexer::TokenType lookahead, std::stack<Symbol> &parse_stack);
 
     void throw_unexpected_token_error(lexer::TokenType expected, lexer::TokenType got);

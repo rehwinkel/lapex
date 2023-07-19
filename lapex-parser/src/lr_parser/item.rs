@@ -85,7 +85,7 @@ impl<'grammar> Item<'grammar> {
         }
     }
 
-    pub fn rule(&self) -> &Rule {
+    pub fn rule(&self) -> &'grammar Rule {
         self.rule
     }
 }

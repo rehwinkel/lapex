@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::CppLLParserCodeGen;
 
 #[derive(Serialize)]
-struct ParserImplHeaderTemplateContext {
+struct ImplHeaderContext {
     visitor_enter_switch: String,
     visitor_exit_switch: String,
     grammar_entry_non_terminal: String,
@@ -17,12 +17,12 @@ struct ParserImplHeaderTemplateContext {
 }
 
 #[derive(Serialize)]
-struct ParserImplTemplateContext {
+struct ImplContext {
     parser_table_switch: String,
 }
 
 #[derive(Serialize)]
-struct ParserVisitorHeaderTemplateContext {
+struct VisitorContext {
     visitor_methods: String,
 }
 
@@ -40,7 +40,7 @@ impl<'parser> CodeWriter<'parser> {
         let mut template = tinytemplate::TinyTemplate::new();
         template.set_default_formatter(&tinytemplate::format_unescaped);
         template
-            .add_template("parser_header", include_str!("../parser/parser_header.tpl"))
+            .add_template("parser_header", include_str!("parser_header.tpl"))
             .unwrap();
         template
             .add_template("parser_impl_header", include_str!("parser_impl_header.tpl"))
@@ -216,14 +216,11 @@ impl<'parser> CodeWriter<'parser> {
         writeln!(output, "}}")
     }
 
-    fn write_visitor_header<W: Write + ?Sized>(
-        &self,
-        output: &mut W,
-    ) -> Result<(), std::io::Error> {
+    fn write_visitor_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), Error> {
         let mut visitor_methods = Vec::new();
         self.write_visitor_methods(&mut visitor_methods)?;
 
-        let context = ParserVisitorHeaderTemplateContext {
+        let context = VisitorContext {
             visitor_methods: String::from_utf8(visitor_methods).unwrap(),
         };
         writeln!(
@@ -235,7 +232,7 @@ impl<'parser> CodeWriter<'parser> {
         )
     }
 
-    fn write_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
+    fn write_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), Error> {
         writeln!(
             output,
             "{}",
@@ -267,7 +264,7 @@ impl<'parser> CodeWriter<'parser> {
         write!(entry_symbol_name, "NonTerminalType::")?;
         self.write_non_terminal_enum_name(*entry_symbol, &mut entry_symbol_name)?;
 
-        let context = ParserImplHeaderTemplateContext {
+        let context = ImplHeaderContext {
             visitor_enter_switch: String::from_utf8(enter_switch_code).unwrap(),
             visitor_exit_switch: String::from_utf8(exit_switch_code).unwrap(),
             non_terminal_enum_variants: String::from_utf8(non_terminal_enum_variants).unwrap(),
@@ -287,7 +284,7 @@ impl<'parser> CodeWriter<'parser> {
         let mut parser_table_switch = Vec::new();
         self.write_table_switch(&mut parser_table_switch)?;
 
-        let context = ParserImplTemplateContext {
+        let context = ImplContext {
             parser_table_switch: String::from_utf8(parser_table_switch).unwrap(),
         };
         writeln!(
