@@ -26,5 +26,20 @@ impl Default for CppLLParserCodeGen {
     }
 }
 
+pub struct CppLRParserCodeGen {}
+
+impl CppLRParserCodeGen {
+    pub fn new() -> Self {
+        CppLRParserCodeGen {}
+    }
+}
+
+impl Default for CppLRParserCodeGen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 mod lexer;
 mod ll_parser;
+mod lr_parser;

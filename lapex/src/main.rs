@@ -4,7 +4,8 @@ use std::path::Path;
 use clap::{arg, command, Parser, ValueEnum};
 use lapex_lexer::LexerCodeGen;
 use lapex_parser::grammar::Grammar;
-use lapex_parser::ll_parser::{LLParserCodeGen, LLParserTable};
+use lapex_parser::ll_parser::LLParserCodeGen;
+use lapex_parser::lr_parser::LRParserCodeGen;
 
 #[derive(Debug, Clone, ValueEnum)]
 enum ParsingAlgorithm {
@@ -67,9 +68,9 @@ fn main() {
         }
     }
 
+    let grammar = Grammar::from_rule_set(&rules).unwrap();
     match cli.algorithm {
         ParsingAlgorithm::LL1 => {
-            let grammar = Grammar::from_rule_set(&rules).unwrap();
             let parser_table = lapex_parser::ll_parser::generate_table(&grammar).unwrap();
             let cpp_codegen = lapex_cpp_codegen::CppLLParserCodeGen::new();
             let code = cpp_codegen.generate_code(&grammar, &parser_table);
@@ -78,9 +79,12 @@ fn main() {
             }
         }
         ParsingAlgorithm::LR0 => {
-            let grammar = Grammar::from_rule_set(&rules).unwrap();
             let parser_table = lapex_parser::lr_parser::generate_table(&grammar).unwrap();
-            println!("{:?}", parser_table);
+            let cpp_codegen = lapex_cpp_codegen::CppLRParserCodeGen::new();
+            let code = cpp_codegen.generate_code(&grammar, &parser_table);
+            for (path, contents) in code.iter() {
+                std::fs::write(target_path.join(path), contents).unwrap();
+            }
         }
-    }
+    };
 }

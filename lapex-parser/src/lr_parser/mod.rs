@@ -3,16 +3,17 @@ use std::{
     fmt::Display,
 };
 
-use petgraph::{
-    dot::Dot, graph::NodeIndex, prelude::DiGraph, visit::EdgeRef, Direction::Outgoing, Graph,
-};
+use petgraph::{graph::NodeIndex, prelude::DiGraph, visit::EdgeRef, Direction::Outgoing, Graph};
 
 use crate::grammar::{Grammar, Rule, Symbol};
 
 use self::bidimap::BidiMap;
 
 mod bidimap;
+mod codegen;
 mod item;
+
+pub use codegen::LRParserCodeGen;
 
 use item::Item;
 
