@@ -1,9 +1,6 @@
-use std::ops::RangeInclusive;
 use std::path::Path;
 
 use clap::{arg, command, Parser};
-use lapex_automaton::Dfa;
-use lapex_input::TokenRule;
 use lapex_lexer::LexerCodeGen;
 use lapex_parser::grammar::Grammar;
 use lapex_parser::ll_parser::{LLParserCodeGen, LLParserTable};
@@ -13,23 +10,35 @@ use lapex_parser::ll_parser::{LLParserCodeGen, LLParserTable};
 struct CommandLine {
     #[arg(required = true)]
     grammar: String,
+    #[arg(long, help = "Do not generate a the lexer")]
+    no_lexer: bool,
 }
 
 fn main() {
     let cli = CommandLine::parse();
     let path = &cli.grammar;
     let target_path = "generated";
+
     let file_contents = std::fs::read(path).unwrap();
     let rules = lapex_input::parse_lapex_file(&file_contents).unwrap();
-    let alphabet = lapex_lexer::generate_alphabet(rules.tokens());
-    let (nfa_entrypoint, nfa) = lapex_lexer::generate_nfa(&alphabet, rules.tokens());
-    let dfa = nfa.powerset_construction(nfa_entrypoint);
-    generate_cpp_lexer(
-        rules.tokens(),
-        &alphabet.get_ranges(),
-        &dfa,
-        Path::new(target_path),
-    );
+
+    let cpp_codegen = lapex_cpp_codegen::CppLexerCodeGen::new();
+    let code = cpp_codegen.generate_tokens(rules.tokens());
+    for (path, contents) in code.iter() {
+        std::fs::write(Path::new(target_path).join(path), contents).unwrap();
+    }
+
+    if !cli.no_lexer {
+        let alphabet = lapex_lexer::generate_alphabet(rules.tokens());
+        let (nfa_entrypoint, nfa) = lapex_lexer::generate_nfa(&alphabet, rules.tokens());
+        let dfa = nfa.powerset_construction(nfa_entrypoint);
+
+        let code = cpp_codegen.generate_lexer(rules.tokens(), &alphabet.get_ranges(), &dfa);
+        for (path, contents) in code.iter() {
+            std::fs::write(Path::new(target_path).join(path), contents).unwrap();
+        }
+    }
+
     let grammar = Grammar::from_rule_set(&rules).unwrap();
     println!("{}", grammar);
     let parser_table = lapex_parser::ll_parser::generate_table(&grammar).unwrap();
@@ -40,19 +49,6 @@ fn main() {
 fn generate_cpp_parser(grammar: &Grammar, table: &LLParserTable, target_path: &Path) {
     let cpp_codegen = lapex_cpp_codegen::CppLLParserCodeGen::new();
     let code = cpp_codegen.generate_code(grammar, table);
-    for (path, contents) in code.iter() {
-        std::fs::write(target_path.join(path), contents).unwrap();
-    }
-}
-
-fn generate_cpp_lexer(
-    tokens: &[TokenRule],
-    alphabet: &[RangeInclusive<u32>],
-    dfa: &Dfa<Vec<String>, usize>,
-    target_path: &Path,
-) {
-    let cpp_codegen = lapex_cpp_codegen::CppLexerCodeGen::new();
-    let code = cpp_codegen.generate_code(tokens, alphabet, dfa);
     for (path, contents) in code.iter() {
         std::fs::write(target_path.join(path), contents).unwrap();
     }

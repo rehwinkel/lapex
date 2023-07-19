@@ -1,6 +1,6 @@
+use std::io::Write;
 use std::ops::RangeInclusive;
 use std::path::Path;
-use std::{io::Write, rc::Rc};
 
 use lapex_automaton::{AutomatonState, Dfa};
 
@@ -13,27 +13,29 @@ use tinytemplate::TinyTemplate;
 use crate::CppLexerCodeGen;
 
 #[derive(Serialize)]
-struct LexerHeaderTemplateContext {
+struct TokensHeaderTemplateContext {
     token_enum_variants: String,
 }
 
 #[derive(Serialize)]
 struct LexerImplTemplateContext {
-    get_token_name_function: String,
     alphabet_switch: String,
     automaton_switch: String,
 }
 
-struct CodeWriter<'lexer> {
+#[derive(Serialize)]
+struct TokensImplTemplateContext {
+    get_token_name_function: String,
+}
+
+struct LexerCodeWriter<'lexer> {
     template: TinyTemplate<'static>,
-    rules: &'lexer [TokenRule<'lexer>],
     alphabet: &'lexer [RangeInclusive<u32>],
     dfa: &'lexer Dfa<Vec<String>, usize>,
 }
 
-impl<'lexer> CodeWriter<'lexer> {
+impl<'lexer> LexerCodeWriter<'lexer> {
     pub fn new(
-        rules: &'lexer [TokenRule],
         alphabet: &'lexer [RangeInclusive<u32>],
         dfa: &'lexer Dfa<Vec<String>, usize>,
     ) -> Self {
@@ -45,39 +47,11 @@ impl<'lexer> CodeWriter<'lexer> {
         template
             .add_template("lexer_impl", include_str!("lexer_impl.tpl"))
             .unwrap();
-        CodeWriter {
-            rules,
+        LexerCodeWriter {
             alphabet,
             dfa,
             template,
         }
-    }
-
-    fn write_token_enum_variants<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        for rule in self.rules {
-            writeln!(output, "TK_{},", rule.token())?;
-        }
-        Ok(())
-    }
-
-    fn write_get_token_name_function<W: Write>(
-        &self,
-        output: &mut W,
-    ) -> Result<(), std::io::Error> {
-        writeln!(output, "const char* get_token_name(TokenType tk_type) {{")?;
-        writeln!(output, "switch (tk_type) {{")?;
-        writeln!(output, "case TokenType::TK_ERR:")?;
-        writeln!(output, "return \"<ERR>\";")?;
-        writeln!(output, "case TokenType::TK_EOF:")?;
-        writeln!(output, "return \"<EOF>\";")?;
-        for rule in self.rules {
-            writeln!(output, "case TokenType::TK_{}:", rule.token())?;
-            writeln!(output, "return \"{}\";", rule.token())?;
-        }
-        writeln!(output, "default:")?;
-        writeln!(output, "return nullptr;")?;
-        writeln!(output, "}}")?;
-        writeln!(output, "}}")
     }
 
     fn write_alphabet_switch<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
@@ -135,17 +109,11 @@ impl<'lexer> CodeWriter<'lexer> {
     }
 
     fn write_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        let mut token_enum_variants = Vec::new();
-        self.write_token_enum_variants(&mut token_enum_variants)?;
-        let context = LexerHeaderTemplateContext {
-            token_enum_variants: String::from_utf8(token_enum_variants).unwrap(),
-        };
-
         writeln!(
             output,
             "{}",
             self.template
-                .render("lexer_header", &context)
+                .render("lexer_header", &())
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
         )
     }
@@ -157,13 +125,9 @@ impl<'lexer> CodeWriter<'lexer> {
         self.write_alphabet_switch(&mut alphabet_switch)?;
         self.write_state_machine_switch(&mut automaton_switch)?;
 
-        let mut get_token_name_function = Vec::new();
-        self.write_get_token_name_function(&mut get_token_name_function)?;
-
         let context = LexerImplTemplateContext {
             alphabet_switch: String::from_utf8(alphabet_switch).unwrap(),
             automaton_switch: String::from_utf8(automaton_switch).unwrap(),
-            get_token_name_function: String::from_utf8(get_token_name_function).unwrap(),
         };
 
         writeln!(
@@ -176,14 +140,91 @@ impl<'lexer> CodeWriter<'lexer> {
     }
 }
 
-impl LexerCodeGen for CppLexerCodeGen {
-    fn generate_code(
+struct TokensCodeWriter<'lexer> {
+    template: TinyTemplate<'static>,
+    rules: &'lexer [TokenRule<'lexer>],
+}
+
+impl<'lexer> TokensCodeWriter<'lexer> {
+    fn new(rules: &'lexer [TokenRule]) -> Self {
+        let mut template = tinytemplate::TinyTemplate::new();
+        template.set_default_formatter(&tinytemplate::format_unescaped);
+        template
+            .add_template("tokens_header", include_str!("tokens_header.tpl"))
+            .unwrap();
+        template
+            .add_template("tokens_impl", include_str!("tokens_impl.tpl"))
+            .unwrap();
+        TokensCodeWriter { rules, template }
+    }
+
+    fn write_token_enum_variants<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
+        for rule in self.rules {
+            writeln!(output, "TK_{},", rule.token())?;
+        }
+        Ok(())
+    }
+
+    fn write_get_token_name_function<W: Write>(
         &self,
-        rules: &[TokenRule],
+        output: &mut W,
+    ) -> Result<(), std::io::Error> {
+        writeln!(output, "switch (tk_type) {{")?;
+        writeln!(output, "case TokenType::TK_ERR:")?;
+        writeln!(output, "return \"<ERR>\";")?;
+        writeln!(output, "case TokenType::TK_EOF:")?;
+        writeln!(output, "return \"<EOF>\";")?;
+        for rule in self.rules {
+            writeln!(output, "case TokenType::TK_{}:", rule.token())?;
+            writeln!(output, "return \"{}\";", rule.token())?;
+        }
+        writeln!(output, "default:")?;
+        writeln!(output, "return nullptr;")?;
+        writeln!(output, "}}")
+    }
+
+    fn write_tokens_impl<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
+        let mut get_token_name_function = Vec::new();
+
+        self.write_get_token_name_function(&mut get_token_name_function)?;
+        let context = TokensImplTemplateContext {
+            get_token_name_function: String::from_utf8(get_token_name_function).unwrap(),
+        };
+
+        writeln!(
+            output,
+            "{}",
+            self.template
+                .render("tokens_impl", &context)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        )
+    }
+
+    fn write_tokens_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
+        let mut token_enum_variants = Vec::new();
+        self.write_token_enum_variants(&mut token_enum_variants)?;
+        let context = TokensHeaderTemplateContext {
+            token_enum_variants: String::from_utf8(token_enum_variants).unwrap(),
+        };
+
+        writeln!(
+            output,
+            "{}",
+            self.template
+                .render("tokens_header", &context)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        )
+    }
+}
+
+impl LexerCodeGen for CppLexerCodeGen {
+    fn generate_lexer(
+        &self,
+        _rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
         dfa: &Dfa<Vec<String>, usize>,
     ) -> GeneratedCode {
-        let code_writer = Rc::new(CodeWriter::new(rules, alphabet, dfa));
+        let code_writer = LexerCodeWriter::new(alphabet, dfa);
         let mut generators = GeneratedCode::new();
         generators
             .add_generated_code(Path::new("lexer.h"), |output| {
@@ -193,6 +234,22 @@ impl LexerCodeGen for CppLexerCodeGen {
         generators
             .add_generated_code(Path::new("lexer.cpp"), |output| {
                 code_writer.write_impl(output)
+            })
+            .unwrap();
+        generators
+    }
+
+    fn generate_tokens(&self, rules: &[TokenRule]) -> GeneratedCode {
+        let code_writer = TokensCodeWriter::new(rules);
+        let mut generators = GeneratedCode::new();
+        generators
+            .add_generated_code(Path::new("tokens.h"), |output| {
+                code_writer.write_tokens_header(output)
+            })
+            .unwrap();
+        generators
+            .add_generated_code(Path::new("tokens.cpp"), |output| {
+                code_writer.write_tokens_impl(output)
             })
             .unwrap();
         generators

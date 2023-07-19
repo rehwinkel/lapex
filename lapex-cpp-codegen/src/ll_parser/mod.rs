@@ -9,9 +9,6 @@ use serde::Serialize;
 use crate::CppLLParserCodeGen;
 
 #[derive(Serialize)]
-struct ParserHeaderTemplateContext {}
-
-#[derive(Serialize)]
 struct ParserImplHeaderTemplateContext {
     visitor_enter_switch: String,
     visitor_exit_switch: String,
@@ -215,12 +212,11 @@ impl<'parser> CodeWriter<'parser> {
     }
 
     fn write_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        let context = ParserHeaderTemplateContext {};
         writeln!(
             output,
             "{}",
             self.template
-                .render("parser_header", &context)
+                .render("parser_header", &())
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
         )
     }

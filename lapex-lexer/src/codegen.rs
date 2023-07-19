@@ -5,7 +5,8 @@ use lapex_codegen::GeneratedCode;
 use lapex_input::TokenRule;
 
 pub trait LexerCodeGen {
-    fn generate_code(
+    fn generate_tokens(&self, rules: &[TokenRule]) -> GeneratedCode;
+    fn generate_lexer(
         &self,
         rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],

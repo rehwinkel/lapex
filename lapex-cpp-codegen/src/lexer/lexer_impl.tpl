@@ -4,8 +4,6 @@ namespace lexer
 \{
     Lexer::Lexer(std::istream &in) : in_chars(in), ch(-1), err(0), start_pos(0), end_pos(0), position(0) \{}
 
-    {get_token_name_function}
-
     // Branchless UTF-8: https://github.com/skeeto/branchless-utf8
     void utf8_decode(std::istream &in, uint32_t *c, int *e)
     \{
