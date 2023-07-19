@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+lapex-codegen = { path = "../lapex-codegen" }
 tinytemplate = "1.2.1"
 serde = { version = "1.0", features = ["derive"] }
 lapex-input = { path = "../lapex-input" }

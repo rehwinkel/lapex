@@ -6,7 +6,7 @@ use lapex_automaton::Dfa;
 use lapex_input::TokenRule;
 use lapex_lexer::LexerCodeGen;
 use lapex_parser::grammar::Grammar;
-use lapex_parser::ll_parser::{LLParserTable, TableParserCodeGen};
+use lapex_parser::ll_parser::{LLParserCodeGen, LLParserTable};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -38,28 +38,11 @@ fn main() {
 }
 
 fn generate_cpp_parser(grammar: &Grammar, table: &LLParserTable, target_path: &Path) {
-    let cpp_codegen = lapex_cpp_codegen::CppTableParserCodeGen::new();
-    if cpp_codegen.has_header() {
-        let mut parser_h = std::fs::File::create(target_path.join("parser.h")).unwrap();
-        cpp_codegen
-            .generate_header(grammar, table, &mut parser_h)
-            .unwrap();
+    let cpp_codegen = lapex_cpp_codegen::CppLLParserCodeGen::new();
+    let code = cpp_codegen.generate_code(grammar, table);
+    for (path, contents) in code.iter() {
+        std::fs::write(target_path.join(path), contents).unwrap();
     }
-    if cpp_codegen.has_impl_header() {
-        let mut parser_impl_h = std::fs::File::create(target_path.join("parser_impl.h")).unwrap();
-        cpp_codegen
-            .generate_impl_header(grammar, table, &mut parser_impl_h)
-            .unwrap();
-    }
-    let mut visitor_h = std::fs::File::create(target_path.join("visitor.h")).unwrap();
-    cpp_codegen
-        .generate_visitor_header(grammar, table, &mut visitor_h)
-        .unwrap();
-
-    let mut parser_cpp = std::fs::File::create(target_path.join("parser.cpp")).unwrap();
-    cpp_codegen
-        .generate_source(grammar, table, &mut parser_cpp)
-        .unwrap();
 }
 
 fn generate_cpp_lexer(
@@ -69,14 +52,8 @@ fn generate_cpp_lexer(
     target_path: &Path,
 ) {
     let cpp_codegen = lapex_cpp_codegen::CppLexerCodeGen::new();
-    if cpp_codegen.has_header() {
-        let mut lexer_h = std::fs::File::create(target_path.join("lexer.h")).unwrap();
-        cpp_codegen
-            .generate_header(tokens, alphabet, dfa, &mut lexer_h)
-            .unwrap();
+    let code = cpp_codegen.generate_code(tokens, alphabet, dfa);
+    for (path, contents) in code.iter() {
+        std::fs::write(target_path.join(path), contents).unwrap();
     }
-    let mut lexer_cpp = std::fs::File::create(target_path.join("lexer.cpp")).unwrap();
-    cpp_codegen
-        .generate_source(tokens, alphabet, dfa, &mut lexer_cpp)
-        .unwrap();
 }

@@ -1,14 +1,44 @@
 use std::io::{Error, Write};
+use std::path::Path;
 
+use lapex_codegen::GeneratedCode;
 use lapex_parser::grammar::{Grammar, Symbol};
-use lapex_parser::ll_parser;
-use lapex_parser::ll_parser::LLParserTable;
+use lapex_parser::ll_parser::{self, LLParserTable};
 use serde::Serialize;
 
-use crate::CppTableParserCodeGen;
+use crate::CppLLParserCodeGen;
 
-impl CppTableParserCodeGen {
-    pub fn new() -> Self {
+#[derive(Serialize)]
+struct ParserHeaderTemplateContext {}
+
+#[derive(Serialize)]
+struct ParserImplHeaderTemplateContext {
+    visitor_enter_switch: String,
+    visitor_exit_switch: String,
+    grammar_entry_non_terminal: String,
+}
+
+#[derive(Serialize)]
+struct ParserImplTemplateContext {
+    parser_table_switch: String,
+}
+
+#[derive(Serialize)]
+struct ParserVisitorHeaderTemplateContext {
+    visitor_methods: String,
+}
+
+struct CodeWriter<'parser> {
+    grammar: &'parser Grammar<'parser>,
+    parser_table: &'parser LLParserTable,
+    template: tinytemplate::TinyTemplate<'static>,
+}
+
+impl<'parser> CodeWriter<'parser> {
+    pub fn new(
+        grammar: &'parser Grammar,
+        parser_table: &'parser LLParserTable,
+    ) -> CodeWriter<'parser> {
         let mut template = tinytemplate::TinyTemplate::new();
         template.set_default_formatter(&tinytemplate::format_unescaped);
         template
@@ -26,12 +56,16 @@ impl CppTableParserCodeGen {
                 include_str!("parser_visitor_header.tpl"),
             )
             .unwrap();
-        CppTableParserCodeGen { template }
+        CodeWriter {
+            grammar,
+            parser_table,
+            template,
+        }
     }
 
-    fn write_visitor_methods<W: Write>(grammar: &Grammar, output: &mut W) -> Result<(), Error> {
-        for non_terminal in grammar.non_terminals() {
-            if let Some(name) = grammar.is_named_non_terminal(non_terminal) {
+    fn write_visitor_methods<W: Write>(&self, output: &mut W) -> Result<(), Error> {
+        for non_terminal in self.grammar.non_terminals() {
+            if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
                 writeln!(output, "virtual void enter_{}() = 0;", name)?;
                 writeln!(output, "virtual void exit_{}() = 0;", name)?;
             }
@@ -40,13 +74,13 @@ impl CppTableParserCodeGen {
     }
 
     fn write_non_terminal_visitor_call<W: Write>(
-        grammar: &Grammar,
+        &self,
         is_exit: bool,
         output: &mut W,
     ) -> Result<(), Error> {
         writeln!(output, "switch (non_terminal) {{")?;
-        for non_terminal in grammar.non_terminals() {
-            if let Some(name) = grammar.is_named_non_terminal(non_terminal) {
+        for non_terminal in self.grammar.non_terminals() {
+            if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
                 let index = (if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
                     Some(non_terminal_index)
                 } else {
@@ -66,7 +100,7 @@ impl CppTableParserCodeGen {
     }
 
     fn write_push_symbol_sequence<W: Write>(
-        grammar: &Grammar,
+        &self,
         symbols: &[Symbol],
         output: &mut W,
     ) -> Result<(), Error> {
@@ -85,7 +119,7 @@ impl CppTableParserCodeGen {
                         output,
                         "Symbol sym{}{{SymbolKind::Terminal, static_cast<uint32_t>(lexer::TokenType::TK_{})}};",
                         i,
-                        grammar.get_token_name(*terminal_index)
+                       self. grammar.get_token_name(*terminal_index)
                     )?;
                     writeln!(output, "parse_stack.push(sym{});", i)?;
                 }
@@ -99,6 +133,7 @@ impl CppTableParserCodeGen {
     }
 
     fn write_parser_table_error<'a, W: Write, I>(
+        &self,
         non_terminal_name: Option<&'a str>,
         allowed_tokens: I,
         output: &mut W,
@@ -121,13 +156,9 @@ impl CppTableParserCodeGen {
         writeln!(output, "throw std::runtime_error(\"{}\");", message)
     }
 
-    fn write_table_switch<W: Write>(
-        grammar: &Grammar,
-        parser_table: &LLParserTable,
-        output: &mut W,
-    ) -> Result<(), Error> {
+    fn write_table_switch<W: Write>(&self, output: &mut W) -> Result<(), Error> {
         writeln!(output, "switch(non_terminal.identifier) {{")?;
-        for non_terminal in grammar.non_terminals() {
+        for non_terminal in self.grammar.non_terminals() {
             let non_terminal_index = if let Symbol::NonTerminal(i) = non_terminal {
                 i
             } else {
@@ -135,22 +166,24 @@ impl CppTableParserCodeGen {
             };
             writeln!(output, "case {}: {{", non_terminal_index)?;
             writeln!(output, "switch (lookahead) {{")?;
-            for (terminal, token_name) in grammar.terminals_with_names() {
-                let entry = parser_table.get_production(non_terminal, &terminal);
+            for (terminal, token_name) in self.grammar.terminals_with_names() {
+                let entry = self.parser_table.get_production(non_terminal, &terminal);
                 if let Some(symbols) = entry {
                     writeln!(output, "case lexer::TokenType::TK_{}: {{", token_name)?;
-                    CppTableParserCodeGen::write_push_symbol_sequence(grammar, symbols, output)?;
+                    self.write_push_symbol_sequence(symbols, output)?;
                     writeln!(output, "break;")?;
                     writeln!(output, "}}")?;
                 }
             }
             writeln!(output, "default:")?;
-            CppTableParserCodeGen::write_parser_table_error(
-                grammar.get_production_name(&non_terminal),
-                grammar
+            self.write_parser_table_error(
+                self.grammar.get_production_name(&non_terminal),
+                self.grammar
                     .terminals_with_names()
                     .filter(|(symbol, _)| {
-                        parser_table.get_production(non_terminal, symbol).is_some()
+                        self.parser_table
+                            .get_production(non_terminal, symbol)
+                            .is_some()
                     })
                     .map(|(_, name)| name),
                 output,
@@ -161,45 +194,13 @@ impl CppTableParserCodeGen {
         }
         writeln!(output, "}}")
     }
-}
 
-#[derive(Serialize)]
-struct ParserHeaderTemplateContext {}
-
-#[derive(Serialize)]
-struct ParserImplHeaderTemplateContext {
-    visitor_enter_switch: String,
-    visitor_exit_switch: String,
-    grammar_entry_non_terminal: String,
-}
-
-#[derive(Serialize)]
-struct ParserImplTemplateContext {
-    parser_table_switch: String,
-}
-
-#[derive(Serialize)]
-struct ParserVisitorHeaderTemplateContext {
-    visitor_methods: String,
-}
-
-impl ll_parser::TableParserCodeGen for CppTableParserCodeGen {
-    fn has_header(&self) -> bool {
-        true
-    }
-
-    fn has_impl_header(&self) -> bool {
-        true
-    }
-
-    fn generate_visitor_header<W: Write>(
+    fn write_visitor_header<W: Write + ?Sized>(
         &self,
-        grammar: &Grammar,
-        _parser_table: &LLParserTable,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
         let mut visitor_methods = Vec::new();
-        CppTableParserCodeGen::write_visitor_methods(grammar, &mut visitor_methods)?;
+        self.write_visitor_methods(&mut visitor_methods)?;
 
         let context = ParserVisitorHeaderTemplateContext {
             visitor_methods: String::from_utf8(visitor_methods).unwrap(),
@@ -213,12 +214,7 @@ impl ll_parser::TableParserCodeGen for CppTableParserCodeGen {
         )
     }
 
-    fn generate_header<W: Write>(
-        &self,
-        _grammar: &Grammar,
-        _parser_table: &LLParserTable,
-        output: &mut W,
-    ) -> Result<(), std::io::Error> {
+    fn write_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
         let context = ParserHeaderTemplateContext {};
         writeln!(
             output,
@@ -229,33 +225,21 @@ impl ll_parser::TableParserCodeGen for CppTableParserCodeGen {
         )
     }
 
-    fn generate_impl_header<W: Write>(
-        &self,
-        grammar: &Grammar,
-        _parser_table: &LLParserTable,
-        output: &mut W,
-    ) -> Result<(), Error> {
+    fn write_impl_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), Error> {
         let mut visitor_code = Vec::new();
-        CppTableParserCodeGen::write_visitor_methods(grammar, &mut visitor_code)?;
+        self.write_visitor_methods(&mut visitor_code)?;
 
         let mut enter_switch_code = Vec::new();
         let mut exit_switch_code = Vec::new();
-        CppTableParserCodeGen::write_non_terminal_visitor_call(
-            grammar,
-            false,
-            &mut enter_switch_code,
-        )?;
-        CppTableParserCodeGen::write_non_terminal_visitor_call(
-            grammar,
-            true,
-            &mut exit_switch_code,
-        )?;
+        self.write_non_terminal_visitor_call(false, &mut enter_switch_code)?;
+        self.write_non_terminal_visitor_call(true, &mut exit_switch_code)?;
 
-        let entry_index = if let Symbol::NonTerminal(non_terminal_index) = grammar.entry_point() {
-            non_terminal_index
-        } else {
-            panic!("entry point cannot be something other than non-terminal");
-        };
+        let entry_index =
+            if let Symbol::NonTerminal(non_terminal_index) = self.grammar.entry_point() {
+                non_terminal_index
+            } else {
+                panic!("entry point cannot be something other than non-terminal");
+            };
 
         let context = ParserImplHeaderTemplateContext {
             visitor_enter_switch: String::from_utf8(enter_switch_code).unwrap(),
@@ -272,14 +256,9 @@ impl ll_parser::TableParserCodeGen for CppTableParserCodeGen {
         )
     }
 
-    fn generate_source<W: Write>(
-        &self,
-        grammar: &Grammar,
-        parser_table: &LLParserTable,
-        output: &mut W,
-    ) -> Result<(), Error> {
+    fn write_impl<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), Error> {
         let mut parser_table_switch = Vec::new();
-        CppTableParserCodeGen::write_table_switch(grammar, parser_table, &mut parser_table_switch)?;
+        self.write_table_switch(&mut parser_table_switch)?;
 
         let context = ParserImplTemplateContext {
             parser_table_switch: String::from_utf8(parser_table_switch).unwrap(),
@@ -291,5 +270,37 @@ impl ll_parser::TableParserCodeGen for CppTableParserCodeGen {
                 .render("parser_impl", &context)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
         )
+    }
+}
+
+impl ll_parser::LLParserCodeGen for CppLLParserCodeGen {
+    fn generate_code(
+        &self,
+        grammar: &Grammar,
+        parser_table: &LLParserTable,
+    ) -> lapex_codegen::GeneratedCode {
+        let code_writer = CodeWriter::new(grammar, parser_table);
+        let mut generators = GeneratedCode::new();
+        generators
+            .add_generated_code(Path::new("parser.h"), |output| {
+                code_writer.write_header(output)
+            })
+            .unwrap();
+        generators
+            .add_generated_code(Path::new("parser.cpp"), |output| {
+                code_writer.write_impl(output)
+            })
+            .unwrap();
+        generators
+            .add_generated_code(Path::new("parser_impl.h"), |output| {
+                code_writer.write_impl_header(output)
+            })
+            .unwrap();
+        generators
+            .add_generated_code(Path::new("visitor.h"), |output| {
+                code_writer.write_visitor_header(output)
+            })
+            .unwrap();
+        generators
     }
 }

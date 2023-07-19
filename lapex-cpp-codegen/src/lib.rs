@@ -1,5 +1,9 @@
-pub struct CppLexerCodeGen {
-    template: tinytemplate::TinyTemplate<'static>,
+pub struct CppLexerCodeGen {}
+
+impl CppLexerCodeGen {
+    pub fn new() -> Self {
+        CppLexerCodeGen {}
+    }
 }
 
 impl Default for CppLexerCodeGen {
@@ -8,11 +12,15 @@ impl Default for CppLexerCodeGen {
     }
 }
 
-pub struct CppTableParserCodeGen {
-    template: tinytemplate::TinyTemplate<'static>,
+pub struct CppLLParserCodeGen {}
+
+impl CppLLParserCodeGen {
+    pub fn new() -> Self {
+        CppLLParserCodeGen {}
+    }
 }
 
-impl Default for CppTableParserCodeGen {
+impl Default for CppLLParserCodeGen {
     fn default() -> Self {
         Self::new()
     }

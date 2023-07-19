@@ -208,10 +208,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lapex-codegen"
+version = "0.1.0"
+
+[[package]]
 name = "lapex-cpp-codegen"
 version = "0.1.0"
 dependencies = [
  "lapex-automaton",
+ "lapex-codegen",
  "lapex-input",
  "lapex-lexer",
  "lapex-parser",
@@ -231,6 +236,7 @@ name = "lapex-lexer"
 version = "0.1.0"
 dependencies = [
  "lapex-automaton",
+ "lapex-codegen",
  "lapex-input",
 ]
 
@@ -238,6 +244,7 @@ dependencies = [
 name = "lapex-parser"
 version = "0.1.0"
 dependencies = [
+ "lapex-codegen",
  "lapex-input",
  "petgraph",
 ]

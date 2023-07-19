@@ -3,7 +3,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroU32;
 
-pub use codegen::TableParserCodeGen;
+pub use codegen::LLParserCodeGen;
 
 use crate::grammar::{Grammar, GrammarError, Symbol};
 

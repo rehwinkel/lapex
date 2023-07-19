@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 petgraph = "0.6.2"
 lapex-input = { path = "../lapex-input" }
+lapex-codegen = { path = "../lapex-codegen" }
