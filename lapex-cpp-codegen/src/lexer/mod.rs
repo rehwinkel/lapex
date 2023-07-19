@@ -114,7 +114,7 @@ impl CppLexerCodeGen {
 }
 
 #[derive(Serialize)]
-struct LexerTemplateContext {
+struct LexerHeaderTemplateContext {
     token_enum_variants: String,
 }
 
@@ -139,7 +139,7 @@ impl LexerCodeGen for CppLexerCodeGen {
     ) -> Result<(), std::io::Error> {
         let mut token_enum_variants = Vec::new();
         CppLexerCodeGen::write_token_enum_variants(rules, &mut token_enum_variants)?;
-        let context = LexerTemplateContext {
+        let context = LexerHeaderTemplateContext {
             token_enum_variants: String::from_utf8(token_enum_variants).unwrap(),
         };
 

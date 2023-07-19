@@ -1,5 +1,6 @@
 #include "parser.h"
 #include <sstream>
+#include <iostream>
 
 struct TokenData {
   size_t start;

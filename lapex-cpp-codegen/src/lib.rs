@@ -8,7 +8,9 @@ impl Default for CppLexerCodeGen {
     }
 }
 
-pub struct CppTableParserCodeGen {}
+pub struct CppTableParserCodeGen {
+    template: tinytemplate::TinyTemplate<'static>,
+}
 
 impl Default for CppTableParserCodeGen {
     fn default() -> Self {
@@ -17,4 +19,4 @@ impl Default for CppTableParserCodeGen {
 }
 
 mod lexer;
-mod table_parser;
+mod ll_parser;
