@@ -44,12 +44,10 @@ fn compute_follow_sets(
     // repeat until no more changes occur
     let terminated_entry_point_rhs = vec![*grammar.entry_point(), Symbol::End];
     loop {
-        let grammar_rules = grammar.rules().iter().map(|r| (Some(r.lhs()), r.rhs()));
+        let grammar_rules = grammar.rules().iter().map(|r| (Some(r.lhs().unwrap()), r.rhs()));
         let all_rules = std::iter::once((None, &terminated_entry_point_rhs)).chain(grammar_rules);
         let mut inserted_any = false;
-        for rule in all_rules {
-            let lhs = rule.0.unwrap();
-            let sequence = rule.1;
+        for (lhs, sequence) in all_rules {
             for i in 0..sequence.len() {
                 let symbol = &sequence[i];
                 if let Symbol::NonTerminal(_) = symbol {
