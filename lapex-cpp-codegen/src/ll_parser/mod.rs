@@ -13,6 +13,7 @@ struct ParserImplHeaderTemplateContext {
     visitor_enter_switch: String,
     visitor_exit_switch: String,
     grammar_entry_non_terminal: String,
+    non_terminal_enum_variants: String,
 }
 
 #[derive(Serialize)]
@@ -39,7 +40,7 @@ impl<'parser> CodeWriter<'parser> {
         let mut template = tinytemplate::TinyTemplate::new();
         template.set_default_formatter(&tinytemplate::format_unescaped);
         template
-            .add_template("parser_header", include_str!("parser_header.tpl"))
+            .add_template("parser_header", include_str!("../parser/parser_header.tpl"))
             .unwrap();
         template
             .add_template("parser_impl_header", include_str!("parser_impl_header.tpl"))
@@ -78,13 +79,9 @@ impl<'parser> CodeWriter<'parser> {
         writeln!(output, "switch (non_terminal) {{")?;
         for non_terminal in self.grammar.non_terminals() {
             if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
-                let index = (if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
-                    Some(non_terminal_index)
-                } else {
-                    None
-                })
-                .unwrap();
-                writeln!(output, "case {}:", index)?;
+                write!(output, "case NonTerminalType::")?;
+                self.write_non_terminal_enum_name(non_terminal, output)?;
+                writeln!(output, ":")?;
                 if is_exit {
                     writeln!(output, "visitor.exit_{}();", name)?;
                 } else {
@@ -96,6 +93,31 @@ impl<'parser> CodeWriter<'parser> {
         writeln!(output, "}}")
     }
 
+    fn write_non_terminal_enum_name<W: Write>(
+        &self,
+        non_terminal: Symbol,
+        output: &mut W,
+    ) -> Result<(), Error> {
+        if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
+            write!(output, "NT_{}", name.to_uppercase())?;
+        } else {
+            if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
+                write!(output, "NT_ANON{}", non_terminal_index)?;
+            } else {
+                unreachable!()
+            }
+        }
+        Ok(())
+    }
+
+    fn write_non_terminal_enum_variants<W: Write>(&self, output: &mut W) -> Result<(), Error> {
+        for non_terminal in self.grammar.non_terminals() {
+            self.write_non_terminal_enum_name(non_terminal, output)?;
+            writeln!(output, ",")?;
+        }
+        Ok(())
+    }
+
     fn write_push_symbol_sequence<W: Write>(
         &self,
         symbols: &[Symbol],
@@ -103,12 +125,14 @@ impl<'parser> CodeWriter<'parser> {
     ) -> Result<(), Error> {
         for (i, symbol) in symbols.iter().rev().enumerate() {
             match symbol {
-                Symbol::NonTerminal(non_terminal_index) => {
-                    writeln!(
+                Symbol::NonTerminal(_) => {
+                    write!(
                         output,
-                        "Symbol sym{}{{SymbolKind::NonTerminal, {}}};",
-                        i, non_terminal_index
+                        "Symbol sym{}{{SymbolKind::NonTerminal, static_cast<uint32_t>(NonTerminalType::",
+                        i
                     )?;
+                    self.write_non_terminal_enum_name(*symbol, output)?;
+                    writeln!(output, ")}};")?;
                     writeln!(output, "parse_stack.push(sym{});", i)?;
                 }
                 Symbol::Terminal(terminal_index) => {
@@ -226,21 +250,28 @@ impl<'parser> CodeWriter<'parser> {
         self.write_visitor_methods(&mut visitor_code)?;
 
         let mut enter_switch_code = Vec::new();
-        let mut exit_switch_code = Vec::new();
         self.write_non_terminal_visitor_call(false, &mut enter_switch_code)?;
+
+        let mut exit_switch_code = Vec::new();
         self.write_non_terminal_visitor_call(true, &mut exit_switch_code)?;
 
-        let entry_index =
-            if let Symbol::NonTerminal(non_terminal_index) = self.grammar.entry_point() {
-                non_terminal_index
-            } else {
-                panic!("entry point cannot be something other than non-terminal");
-            };
+        let mut non_terminal_enum_variants = Vec::new();
+        self.write_non_terminal_enum_variants(&mut non_terminal_enum_variants)?;
+
+        let entry_symbol = if let entry @ Symbol::NonTerminal(_) = self.grammar.entry_point() {
+            entry
+        } else {
+            panic!("entry point cannot be something other than non-terminal");
+        };
+        let mut entry_symbol_name = Vec::new();
+        write!(entry_symbol_name, "NonTerminalType::")?;
+        self.write_non_terminal_enum_name(*entry_symbol, &mut entry_symbol_name)?;
 
         let context = ParserImplHeaderTemplateContext {
             visitor_enter_switch: String::from_utf8(enter_switch_code).unwrap(),
             visitor_exit_switch: String::from_utf8(exit_switch_code).unwrap(),
-            grammar_entry_non_terminal: format!("{}", entry_index),
+            non_terminal_enum_variants: String::from_utf8(non_terminal_enum_variants).unwrap(),
+            grammar_entry_non_terminal: String::from_utf8(entry_symbol_name).unwrap(),
         };
 
         writeln!(
