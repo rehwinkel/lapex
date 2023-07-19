@@ -2,7 +2,6 @@
 name = "lapex"
 version = "0.1.0"
 edition = "2021"
-author = "Ian Rehwinkel <ian.rehwinkel@tutanota.com>"
 
 [dependencies]
 clap = { version = "4.3.16", features = ["derive"] }
