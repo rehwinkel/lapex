@@ -10,3 +10,4 @@ lapex-lexer = { path = "../lapex-lexer" }
 lapex-parser = { path = "../lapex-parser" }
 lapex-input = { path = "../lapex-input" }
 lapex-cpp-codegen = { path = "../lapex-cpp-codegen" }
+lapex-codegen = { path = "../lapex-codegen" }

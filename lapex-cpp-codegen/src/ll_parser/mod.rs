@@ -1,7 +1,7 @@
 use std::io::{Error, Write};
 use std::path::Path;
 
-use lapex_codegen::GeneratedCode;
+use lapex_codegen::GeneratedCodeWriter;
 use lapex_parser::grammar::{Grammar, Symbol};
 use lapex_parser::ll_parser::{self, LLParserTable};
 use serde::Serialize;
@@ -302,29 +302,20 @@ impl ll_parser::LLParserCodeGen for CppLLParserCodeGen {
         &self,
         grammar: &Grammar,
         parser_table: &LLParserTable,
-    ) -> lapex_codegen::GeneratedCode {
+        gen: &mut GeneratedCodeWriter,
+    ) {
         let code_writer = CodeWriter::new(grammar, parser_table);
-        let mut generators = GeneratedCode::new();
-        generators
-            .add_generated_code(Path::new("parser.h"), |output| {
-                code_writer.write_header(output)
-            })
+        gen.generate_code("parser.h", |output| code_writer.write_header(output))
             .unwrap();
-        generators
-            .add_generated_code(Path::new("parser.cpp"), |output| {
-                code_writer.write_impl(output)
-            })
+        gen.generate_code("parser.cpp", |output| code_writer.write_impl(output))
             .unwrap();
-        generators
-            .add_generated_code(Path::new("parser_impl.h"), |output| {
-                code_writer.write_impl_header(output)
-            })
-            .unwrap();
-        generators
-            .add_generated_code(Path::new("visitor.h"), |output| {
-                code_writer.write_visitor_header(output)
-            })
-            .unwrap();
-        generators
+        gen.generate_code("parser_impl.h", |output| {
+            code_writer.write_impl_header(output)
+        })
+        .unwrap();
+        gen.generate_code("visitor.h", |output| {
+            code_writer.write_visitor_header(output)
+        })
+        .unwrap();
     }
 }

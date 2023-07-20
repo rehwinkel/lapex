@@ -2,6 +2,7 @@ use std::fmt::Display;
 use std::path::Path;
 
 use clap::{arg, command, Parser, ValueEnum};
+use lapex_codegen::GeneratedCodeWriter;
 use lapex_lexer::LexerCodeGen;
 use lapex_parser::grammar::Grammar;
 use lapex_parser::ll_parser::LLParserCodeGen;
@@ -52,20 +53,17 @@ fn main() {
     let rules = lapex_input::parse_lapex_file(&file_contents).unwrap();
 
     let cpp_codegen = lapex_cpp_codegen::CppLexerCodeGen::new();
-    let code = cpp_codegen.generate_tokens(rules.tokens());
-    for (path, contents) in code.iter() {
-        std::fs::write(target_path.join(path), contents).unwrap();
-    }
+    let mut gen = GeneratedCodeWriter::with_default(|name| {
+        std::fs::File::create(target_path.join(name)).unwrap()
+    });
+    cpp_codegen.generate_tokens(rules.tokens(), &mut gen);
 
     if !cli.no_lexer {
         let alphabet = lapex_lexer::generate_alphabet(rules.tokens());
         let (nfa_entrypoint, nfa) = lapex_lexer::generate_nfa(&alphabet, rules.tokens());
         let dfa = nfa.powerset_construction(nfa_entrypoint);
 
-        let code = cpp_codegen.generate_lexer(rules.tokens(), &alphabet.get_ranges(), &dfa);
-        for (path, contents) in code.iter() {
-            std::fs::write(target_path.join(path), contents).unwrap();
-        }
+        cpp_codegen.generate_lexer(rules.tokens(), &alphabet.get_ranges(), &dfa, &mut gen);
     }
 
     let grammar = Grammar::from_rule_set(&rules).unwrap();
@@ -73,18 +71,12 @@ fn main() {
         ParsingAlgorithm::LL1 => {
             let parser_table = lapex_parser::ll_parser::generate_table(&grammar).unwrap();
             let cpp_codegen = lapex_cpp_codegen::CppLLParserCodeGen::new();
-            let code = cpp_codegen.generate_code(&grammar, &parser_table);
-            for (path, contents) in code.iter() {
-                std::fs::write(target_path.join(path), contents).unwrap();
-            }
+            cpp_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
         ParsingAlgorithm::LR0 => {
             let parser_table = lapex_parser::lr_parser::generate_table(&grammar).unwrap();
             let cpp_codegen = lapex_cpp_codegen::CppLRParserCodeGen::new();
-            let code = cpp_codegen.generate_code(&grammar, &parser_table);
-            for (path, contents) in code.iter() {
-                std::fs::write(target_path.join(path), contents).unwrap();
-            }
+            cpp_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
     };
 }

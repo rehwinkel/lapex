@@ -4,7 +4,7 @@ use std::path::Path;
 
 use lapex_automaton::{AutomatonState, Dfa};
 
-use lapex_codegen::GeneratedCode;
+use lapex_codegen::GeneratedCodeWriter;
 use lapex_input::TokenRule;
 use lapex_lexer::LexerCodeGen;
 use serde::Serialize;
@@ -223,35 +223,20 @@ impl LexerCodeGen for CppLexerCodeGen {
         _rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
         dfa: &Dfa<Vec<String>, usize>,
-    ) -> GeneratedCode {
+        gen: &mut GeneratedCodeWriter,
+    ) {
         let code_writer = LexerCodeWriter::new(alphabet, dfa);
-        let mut generators = GeneratedCode::new();
-        generators
-            .add_generated_code(Path::new("lexer.h"), |output| {
-                code_writer.write_header(output)
-            })
+        gen.generate_code("lexer.h", |output| code_writer.write_header(output))
             .unwrap();
-        generators
-            .add_generated_code(Path::new("lexer.cpp"), |output| {
-                code_writer.write_impl(output)
-            })
+        gen.generate_code("lexer.cpp", |output| code_writer.write_impl(output))
             .unwrap();
-        generators
     }
 
-    fn generate_tokens(&self, rules: &[TokenRule]) -> GeneratedCode {
+    fn generate_tokens(&self, rules: &[TokenRule], gen: &mut GeneratedCodeWriter) {
         let code_writer = TokensCodeWriter::new(rules);
-        let mut generators = GeneratedCode::new();
-        generators
-            .add_generated_code(Path::new("tokens.h"), |output| {
-                code_writer.write_tokens_header(output)
-            })
+        gen.generate_code("tokens.h", |output| code_writer.write_tokens_header(output))
             .unwrap();
-        generators
-            .add_generated_code(Path::new("tokens.cpp"), |output| {
-                code_writer.write_tokens_impl(output)
-            })
+        gen.generate_code("tokens.cpp", |output| code_writer.write_tokens_impl(output))
             .unwrap();
-        generators
     }
 }
