@@ -9,19 +9,6 @@ use lapex_lexer::LexerCodeGen;
 
 use crate::CppLexerCodeGen;
 
-struct TokensHeaderTemplateContext {
-    token_enum_variants: String,
-}
-
-struct LexerImplTemplateContext {
-    alphabet_switch: String,
-    automaton_switch: String,
-}
-
-struct TokensImplTemplateContext {
-    get_token_name_function: String,
-}
-
 struct LexerCodeWriter<'lexer> {
     lexer_header_template: Template<'static>,
     lexer_impl_template: Template<'static>,
