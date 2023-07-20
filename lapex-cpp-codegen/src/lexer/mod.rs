@@ -1,35 +1,30 @@
 use std::io::Write;
 use std::ops::RangeInclusive;
-use std::path::Path;
 
 use lapex_automaton::{AutomatonState, Dfa};
 
-use lapex_codegen::GeneratedCodeWriter;
+use lapex_codegen::{GeneratedCodeWriter, Template};
 use lapex_input::TokenRule;
 use lapex_lexer::LexerCodeGen;
-use serde::Serialize;
-use tinytemplate::TinyTemplate;
 
 use crate::CppLexerCodeGen;
 
-#[derive(Serialize)]
 struct TokensHeaderTemplateContext {
     token_enum_variants: String,
 }
 
-#[derive(Serialize)]
 struct LexerImplTemplateContext {
     alphabet_switch: String,
     automaton_switch: String,
 }
 
-#[derive(Serialize)]
 struct TokensImplTemplateContext {
     get_token_name_function: String,
 }
 
 struct LexerCodeWriter<'lexer> {
-    template: TinyTemplate<'static>,
+    lexer_header_template: Template<'static>,
+    lexer_impl_template: Template<'static>,
     alphabet: &'lexer [RangeInclusive<u32>],
     dfa: &'lexer Dfa<Vec<String>, usize>,
 }
@@ -39,22 +34,20 @@ impl<'lexer> LexerCodeWriter<'lexer> {
         alphabet: &'lexer [RangeInclusive<u32>],
         dfa: &'lexer Dfa<Vec<String>, usize>,
     ) -> Self {
-        let mut template = tinytemplate::TinyTemplate::new();
-        template.set_default_formatter(&tinytemplate::format_unescaped);
-        template
-            .add_template("lexer_header", include_str!("lexer_header.tpl"))
-            .unwrap();
-        template
-            .add_template("lexer_impl", include_str!("lexer_impl.tpl"))
-            .unwrap();
+        let lexer_header_template = Template::new(include_str!("lexer_header.tpl"));
+        let lexer_impl_template = Template::new(include_str!("lexer_impl.tpl"));
         LexerCodeWriter {
             alphabet,
             dfa,
-            template,
+            lexer_header_template,
+            lexer_impl_template,
         }
     }
 
-    fn write_alphabet_switch<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
+    fn write_alphabet_switch<W: Write + ?Sized>(
+        &self,
+        output: &mut W,
+    ) -> Result<(), std::io::Error> {
         writeln!(output, "uint32_t i;")?;
         writeln!(output, "switch (ch)")?;
         writeln!(output, "{{")?;
@@ -72,7 +65,7 @@ impl<'lexer> LexerCodeWriter<'lexer> {
         writeln!(output, "}}")
     }
 
-    fn write_state_machine_switch<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
+    fn write_state_machine_switch(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         writeln!(output, "switch (state)")?;
         writeln!(output, "{{")?;
         for (index, node) in self.dfa.states() {
@@ -108,64 +101,43 @@ impl<'lexer> LexerCodeWriter<'lexer> {
         writeln!(output, "}}")
     }
 
-    fn write_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("lexer_header", &())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_header(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
+        self.lexer_header_template.writer().write(output)
     }
 
-    fn write_impl<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        let mut alphabet_switch = Vec::new();
-        let mut automaton_switch = Vec::new();
-
-        self.write_alphabet_switch(&mut alphabet_switch)?;
-        self.write_state_machine_switch(&mut automaton_switch)?;
-
-        let context = LexerImplTemplateContext {
-            alphabet_switch: String::from_utf8(alphabet_switch).unwrap(),
-            automaton_switch: String::from_utf8(automaton_switch).unwrap(),
-        };
-
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("lexer_impl", &context)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_impl(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
+        let mut writer = self.lexer_impl_template.writer();
+        writer.substitute("alphabet_switch", |w| self.write_alphabet_switch(w));
+        writer.substitute("automaton_switch", |w| self.write_state_machine_switch(w));
+        writer.write(output)
     }
 }
 
 struct TokensCodeWriter<'lexer> {
-    template: TinyTemplate<'static>,
+    tokens_header_template: Template<'static>,
+    tokens_impl_template: Template<'static>,
     rules: &'lexer [TokenRule<'lexer>],
 }
 
 impl<'lexer> TokensCodeWriter<'lexer> {
     fn new(rules: &'lexer [TokenRule]) -> Self {
-        let mut template = tinytemplate::TinyTemplate::new();
-        template.set_default_formatter(&tinytemplate::format_unescaped);
-        template
-            .add_template("tokens_header", include_str!("tokens_header.tpl"))
-            .unwrap();
-        template
-            .add_template("tokens_impl", include_str!("tokens_impl.tpl"))
-            .unwrap();
-        TokensCodeWriter { rules, template }
+        let tokens_header_template = Template::new(include_str!("tokens_header.tpl"));
+        let tokens_impl_template = Template::new(include_str!("tokens_impl.tpl"));
+        TokensCodeWriter {
+            rules,
+            tokens_header_template,
+            tokens_impl_template,
+        }
     }
 
-    fn write_token_enum_variants<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
+    fn write_token_enum_variants(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         for rule in self.rules {
             writeln!(output, "TK_{},", rule.token())?;
         }
         Ok(())
     }
 
-    fn write_get_token_name_function<W: Write>(
+    fn write_get_token_name_function<W: Write + ?Sized>(
         &self,
         output: &mut W,
     ) -> Result<(), std::io::Error> {
@@ -183,37 +155,18 @@ impl<'lexer> TokensCodeWriter<'lexer> {
         writeln!(output, "}}")
     }
 
-    fn write_tokens_impl<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        let mut get_token_name_function = Vec::new();
-
-        self.write_get_token_name_function(&mut get_token_name_function)?;
-        let context = TokensImplTemplateContext {
-            get_token_name_function: String::from_utf8(get_token_name_function).unwrap(),
-        };
-
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("tokens_impl", &context)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_tokens_impl(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
+        let mut writer = self.tokens_impl_template.writer();
+        writer.substitute("get_token_name_function", |w| {
+            self.write_get_token_name_function(w)
+        });
+        writer.write(output)
     }
 
-    fn write_tokens_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        let mut token_enum_variants = Vec::new();
-        self.write_token_enum_variants(&mut token_enum_variants)?;
-        let context = TokensHeaderTemplateContext {
-            token_enum_variants: String::from_utf8(token_enum_variants).unwrap(),
-        };
-
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("tokens_header", &context)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_tokens_header(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
+        let mut writer = self.tokens_header_template.writer();
+        writer.substitute("token_enum_variants", |w| self.write_token_enum_variants(w));
+        writer.write(output)
     }
 }
 

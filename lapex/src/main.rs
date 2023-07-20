@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::io::BufWriter;
 use std::path::Path;
 
 use clap::{arg, command, Parser, ValueEnum};
@@ -54,7 +55,8 @@ fn main() {
 
     let cpp_codegen = lapex_cpp_codegen::CppLexerCodeGen::new();
     let mut gen = GeneratedCodeWriter::with_default(|name| {
-        std::fs::File::create(target_path.join(name)).unwrap()
+        let file = std::fs::File::create(target_path.join(name)).unwrap();
+        BufWriter::new(file)
     });
     cpp_codegen.generate_tokens(rules.tokens(), &mut gen);
 

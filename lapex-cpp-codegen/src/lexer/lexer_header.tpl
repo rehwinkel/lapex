@@ -5,9 +5,9 @@
 #include <cstdint>
 
 namespace lexer
-\{
+{
     class Lexer
-    \{
+    {
         std::istream &in_chars;
         uint32_t ch;
         int err;

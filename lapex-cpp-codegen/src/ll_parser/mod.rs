@@ -1,35 +1,18 @@
 use std::io::{Error, Write};
-use std::path::Path;
 
-use lapex_codegen::GeneratedCodeWriter;
+use lapex_codegen::{GeneratedCodeWriter, Template};
 use lapex_parser::grammar::{Grammar, Symbol};
 use lapex_parser::ll_parser::{self, LLParserTable};
-use serde::Serialize;
 
 use crate::CppLLParserCodeGen;
-
-#[derive(Serialize)]
-struct ImplHeaderContext {
-    visitor_enter_switch: String,
-    visitor_exit_switch: String,
-    grammar_entry_non_terminal: String,
-    non_terminal_enum_variants: String,
-}
-
-#[derive(Serialize)]
-struct ImplContext {
-    parser_table_switch: String,
-}
-
-#[derive(Serialize)]
-struct VisitorContext {
-    visitor_methods: String,
-}
 
 struct CodeWriter<'parser> {
     grammar: &'parser Grammar<'parser>,
     parser_table: &'parser LLParserTable,
-    template: tinytemplate::TinyTemplate<'static>,
+    parser_header_template: Template<'static>,
+    parser_impl_header_template: Template<'static>,
+    parser_impl_template: Template<'static>,
+    visitor_header_template: Template<'static>,
 }
 
 impl<'parser> CodeWriter<'parser> {
@@ -37,31 +20,21 @@ impl<'parser> CodeWriter<'parser> {
         grammar: &'parser Grammar,
         parser_table: &'parser LLParserTable,
     ) -> CodeWriter<'parser> {
-        let mut template = tinytemplate::TinyTemplate::new();
-        template.set_default_formatter(&tinytemplate::format_unescaped);
-        template
-            .add_template("parser_header", include_str!("parser_header.tpl"))
-            .unwrap();
-        template
-            .add_template("parser_impl_header", include_str!("parser_impl_header.tpl"))
-            .unwrap();
-        template
-            .add_template("parser_impl", include_str!("parser_impl.tpl"))
-            .unwrap();
-        template
-            .add_template(
-                "parser_visitor_header",
-                include_str!("parser_visitor_header.tpl"),
-            )
-            .unwrap();
+        let parser_header_template = Template::new(include_str!("parser_header.tpl"));
+        let parser_impl_header_template = Template::new(include_str!("parser_impl_header.tpl"));
+        let parser_impl_template = Template::new(include_str!("parser_impl.tpl"));
+        let visitor_header_template = Template::new(include_str!("parser_visitor_header.tpl"));
         CodeWriter {
             grammar,
             parser_table,
-            template,
+            parser_header_template,
+            parser_impl_header_template,
+            parser_impl_template,
+            visitor_header_template,
         }
     }
 
-    fn write_visitor_methods<W: Write>(&self, output: &mut W) -> Result<(), Error> {
+    fn write_visitor_methods(&self, output: &mut dyn Write) -> Result<(), Error> {
         for non_terminal in self.grammar.non_terminals() {
             if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
                 writeln!(output, "virtual void enter_{}() = 0;", name)?;
@@ -71,10 +44,10 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_non_terminal_visitor_call<W: Write>(
+    fn write_non_terminal_visitor_call(
         &self,
         is_exit: bool,
-        output: &mut W,
+        output: &mut dyn Write,
     ) -> Result<(), Error> {
         writeln!(output, "switch (non_terminal) {{")?;
         for non_terminal in self.grammar.non_terminals() {
@@ -93,10 +66,10 @@ impl<'parser> CodeWriter<'parser> {
         writeln!(output, "}}")
     }
 
-    fn write_non_terminal_enum_name<W: Write>(
+    fn write_non_terminal_enum_name(
         &self,
         non_terminal: Symbol,
-        output: &mut W,
+        output: &mut dyn Write,
     ) -> Result<(), Error> {
         if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
             write!(output, "NT_{}", name.to_uppercase())?;
@@ -110,7 +83,7 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_non_terminal_enum_variants<W: Write>(&self, output: &mut W) -> Result<(), Error> {
+    fn write_non_terminal_enum_variants(&self, output: &mut dyn Write) -> Result<(), Error> {
         for non_terminal in self.grammar.non_terminals() {
             self.write_non_terminal_enum_name(non_terminal, output)?;
             writeln!(output, ",")?;
@@ -118,10 +91,10 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_push_symbol_sequence<W: Write>(
+    fn write_push_symbol_sequence(
         &self,
         symbols: &[Symbol],
-        output: &mut W,
+        output: &mut dyn Write,
     ) -> Result<(), Error> {
         for (i, symbol) in symbols.iter().rev().enumerate() {
             match symbol {
@@ -153,11 +126,11 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_parser_table_error<'a, W: Write, I>(
+    fn write_parser_table_error<'a, I>(
         &self,
         non_terminal_name: Option<&'a str>,
         allowed_tokens: I,
-        output: &mut W,
+        output: &mut dyn Write,
     ) -> Result<(), Error>
     where
         I: Iterator<Item = &'a str>,
@@ -177,7 +150,7 @@ impl<'parser> CodeWriter<'parser> {
         writeln!(output, "throw std::runtime_error(\"{}\");", message)
     }
 
-    fn write_table_switch<W: Write>(&self, output: &mut W) -> Result<(), Error> {
+    fn write_table_switch(&self, output: &mut dyn Write) -> Result<(), Error> {
         writeln!(output, "switch(non_terminal.identifier) {{")?;
         for non_terminal in self.grammar.non_terminals() {
             let non_terminal_index = if let Symbol::NonTerminal(i) = non_terminal {
@@ -216,84 +189,46 @@ impl<'parser> CodeWriter<'parser> {
         writeln!(output, "}}")
     }
 
-    fn write_visitor_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), Error> {
-        let mut visitor_methods = Vec::new();
-        self.write_visitor_methods(&mut visitor_methods)?;
-
-        let context = VisitorContext {
-            visitor_methods: String::from_utf8(visitor_methods).unwrap(),
-        };
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("parser_visitor_header", &context)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_visitor_header(&self, output: &mut dyn Write) -> Result<(), Error> {
+        let mut writer = self.visitor_header_template.writer();
+        writer.substitute("visitor_methods", |w| self.write_visitor_methods(w));
+        writer.write(output)
     }
 
-    fn write_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), Error> {
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("parser_header", &())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_header(&self, output: &mut dyn Write) -> Result<(), Error> {
+        self.parser_header_template.writer().write(output)
     }
 
-    fn write_impl_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), Error> {
-        let mut visitor_code = Vec::new();
-        self.write_visitor_methods(&mut visitor_code)?;
-
-        let mut enter_switch_code = Vec::new();
-        self.write_non_terminal_visitor_call(false, &mut enter_switch_code)?;
-
-        let mut exit_switch_code = Vec::new();
-        self.write_non_terminal_visitor_call(true, &mut exit_switch_code)?;
-
-        let mut non_terminal_enum_variants = Vec::new();
-        self.write_non_terminal_enum_variants(&mut non_terminal_enum_variants)?;
-
+    fn write_impl_header(&self, output: &mut dyn Write) -> Result<(), Error> {
         let entry_symbol = if let entry @ Symbol::NonTerminal(_) = self.grammar.entry_point() {
             entry
         } else {
             panic!("entry point cannot be something other than non-terminal");
         };
-        let mut entry_symbol_name = Vec::new();
-        write!(entry_symbol_name, "NonTerminalType::")?;
-        self.write_non_terminal_enum_name(*entry_symbol, &mut entry_symbol_name)?;
 
-        let context = ImplHeaderContext {
-            visitor_enter_switch: String::from_utf8(enter_switch_code).unwrap(),
-            visitor_exit_switch: String::from_utf8(exit_switch_code).unwrap(),
-            non_terminal_enum_variants: String::from_utf8(non_terminal_enum_variants).unwrap(),
-            grammar_entry_non_terminal: String::from_utf8(entry_symbol_name).unwrap(),
-        };
+        let mut writer = self.parser_impl_header_template.writer();
+        writer.substitute("visitor_enter_switch", |w| {
+            self.write_non_terminal_visitor_call(false, w)
+        });
+        writer.substitute("visitor_exit_switch", |w| {
+            self.write_non_terminal_visitor_call(true, w)
+        });
+        writer.substitute("grammar_entry_non_terminal", |w| {
+            write!(w, "NonTerminalType::")?;
+            self.write_non_terminal_enum_name(*entry_symbol, w)?;
+            Ok(())
+        });
+        writer.substitute("non_terminal_enum_variants", |w| {
+            self.write_non_terminal_enum_variants(w)
+        });
 
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("parser_impl_header", &context)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+        writer.write(output)
     }
 
-    fn write_impl<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), Error> {
-        let mut parser_table_switch = Vec::new();
-        self.write_table_switch(&mut parser_table_switch)?;
-
-        let context = ImplContext {
-            parser_table_switch: String::from_utf8(parser_table_switch).unwrap(),
-        };
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("parser_impl", &context)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_impl(&self, output: &mut dyn Write) -> Result<(), Error> {
+        let mut writer = self.parser_impl_template.writer();
+        writer.substitute("parser_table_switch", |w| self.write_table_switch(w));
+        writer.write(output)
     }
 }
 

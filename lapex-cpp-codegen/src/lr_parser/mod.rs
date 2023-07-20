@@ -2,64 +2,33 @@ use std::{
     collections::HashMap,
     io::{Error, Write},
     num::NonZeroUsize,
-    path::Path,
 };
 
-use lapex_codegen::GeneratedCodeWriter;
+use lapex_codegen::{GeneratedCodeWriter, Template};
 use lapex_parser::{
     grammar::{Grammar, Rule, Symbol},
     lr_parser::{ActionGotoTable, LRParserCodeGen, TableEntry},
 };
-use serde::Serialize;
 
 use crate::CppLRParserCodeGen;
-
-#[derive(Serialize)]
-struct ImplHeaderContext {
-    visitor_reduce_switch: String,
-    entry_state: String,
-    non_terminal_enum_variants: String,
-}
-
-#[derive(Serialize)]
-struct ImplContext {
-    action_table: String,
-    goto_table: String,
-    stack_reduce_table: String,
-}
-
-#[derive(Serialize)]
-struct VisitorContext {
-    visitor_methods: String,
-}
 
 struct CodeWriter<'parser> {
     grammar: &'parser Grammar<'parser>,
     parser_table: &'parser ActionGotoTable<'parser>,
-    template: tinytemplate::TinyTemplate<'static>,
+    parser_header_template: Template<'static>,
+    parser_impl_header_template: Template<'static>,
+    parser_impl_template: Template<'static>,
+    visitor_header_template: Template<'static>,
     rule_index_map: HashMap<*const Rule, NonZeroUsize>,
     rules_by_non_terminal: HashMap<Symbol, Vec<&'parser Rule>>,
 }
 
 impl<'parser> CodeWriter<'parser> {
     fn new(grammar: &'parser Grammar<'parser>, parser_table: &'parser ActionGotoTable) -> Self {
-        let mut template = tinytemplate::TinyTemplate::new();
-        template.set_default_formatter(&tinytemplate::format_unescaped);
-        template
-            .add_template("parser_header", include_str!("parser_header.tpl"))
-            .unwrap();
-        template
-            .add_template("parser_impl_header", include_str!("parser_impl_header.tpl"))
-            .unwrap();
-        template
-            .add_template("parser_impl", include_str!("parser_impl.tpl"))
-            .unwrap();
-        template
-            .add_template(
-                "parser_visitor_header",
-                include_str!("parser_visitor_header.tpl"),
-            )
-            .unwrap();
+        let parser_header_template = Template::new(include_str!("parser_header.tpl"));
+        let parser_impl_header_template = Template::new(include_str!("parser_impl_header.tpl"));
+        let parser_impl_template = Template::new(include_str!("parser_impl.tpl"));
+        let visitor_header_template = Template::new(include_str!("parser_visitor_header.tpl"));
 
         let mut rules_by_non_terminal = HashMap::new();
         for rule in grammar.rules() {
@@ -79,16 +48,19 @@ impl<'parser> CodeWriter<'parser> {
         CodeWriter {
             grammar,
             parser_table,
-            template,
             rule_index_map,
             rules_by_non_terminal,
+            parser_header_template,
+            parser_impl_header_template,
+            parser_impl_template,
+            visitor_header_template,
         }
     }
 
-    fn write_non_terminal_enum_name<W: Write>(
+    fn write_non_terminal_enum_name(
         &self,
         non_terminal: Symbol,
-        output: &mut W,
+        output: &mut dyn Write,
     ) -> Result<(), Error> {
         if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
             write!(output, "NT_{}", name.to_uppercase())?;
@@ -102,7 +74,7 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_non_terminal_enum_variants<W: Write>(&self, output: &mut W) -> Result<(), Error> {
+    fn write_non_terminal_enum_variants(&self, output: &mut dyn Write) -> Result<(), Error> {
         for non_terminal in self.grammar.non_terminals() {
             self.write_non_terminal_enum_name(non_terminal, output)?;
             writeln!(output, ",")?;
@@ -110,14 +82,10 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_goto_switch_cases<
-        'a,
-        W: Write,
-        I: Iterator<Item = (Symbol, Option<&'a TableEntry<'a>>)>,
-    >(
+    fn write_goto_switch_cases<'a, I: Iterator<Item = (Symbol, Option<&'a TableEntry<'a>>)>>(
         &self,
         states: I,
-        output: &mut W,
+        output: &mut dyn Write,
     ) -> Result<(), Error> {
         for (symbol, entry) in states {
             if let Some(entry) = entry {
@@ -152,14 +120,10 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_action_switch_cases<
-        'a,
-        W: Write,
-        I: Iterator<Item = (Symbol, Option<&'a TableEntry<'a>>)>,
-    >(
+    fn write_action_switch_cases<'a, I: Iterator<Item = (Symbol, Option<&'a TableEntry<'a>>)>>(
         &self,
         states: I,
-        output: &mut W,
+        output: &mut dyn Write,
     ) -> Result<(), Error> {
         for (symbol, entry) in states {
             if let Some(entry) = entry {
@@ -206,7 +170,7 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_goto_table<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
+    fn write_goto_table(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         writeln!(output, "switch (state) {{")?;
         for state in 0..self.parser_table.states() {
             if self.parser_table.state_has_shift(state, self.grammar) {
@@ -251,7 +215,7 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_shift_or_reduce_table<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
+    fn write_shift_or_reduce_table(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         writeln!(output, "switch (state) {{")?;
         for state in 0..self.parser_table.states() {
             writeln!(output, "case {}: {{", state)?;
@@ -294,17 +258,11 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("parser_header", &())
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_header(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
+        self.parser_header_template.writer().write(output)
     }
 
-    fn write_visitor_methods<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
+    fn write_visitor_methods(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         for (non_terminal, rules) in &self.rules_by_non_terminal {
             let non_terminal_name = self.get_non_terminal_name(non_terminal);
             if rules.len() != 1 {
@@ -338,7 +296,7 @@ impl<'parser> CodeWriter<'parser> {
         non_terminal_name
     }
 
-    fn write_stack_reduce_table<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
+    fn write_stack_reduce_table(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         writeln!(output, "switch(rule) {{")?;
         for (rule, rule_index) in &self.rule_index_map {
             writeln!(output, "case {}: {{", rule_index)?;
@@ -377,32 +335,15 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_impl<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        let mut action_table = Vec::new();
-        self.write_shift_or_reduce_table(&mut action_table)?;
-
-        let mut goto_table = Vec::new();
-        self.write_goto_table(&mut goto_table)?;
-
-        let mut stack_reduce_table = Vec::new();
-        self.write_stack_reduce_table(&mut stack_reduce_table)?;
-
-        let context = ImplContext {
-            action_table: String::from_utf8(action_table).unwrap(),
-            goto_table: String::from_utf8(goto_table).unwrap(),
-            stack_reduce_table: String::from_utf8(stack_reduce_table).unwrap(),
-        };
-
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("parser_impl", &context)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_impl(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
+        let mut writer = self.parser_impl_template.writer();
+        writer.substitute("action_table", |w| self.write_shift_or_reduce_table(w));
+        writer.substitute("goto_table", |w| self.write_goto_table(w));
+        writer.substitute("stack_reduce_table", |w| self.write_stack_reduce_table(w));
+        writer.write(output)
     }
 
-    fn write_visitor_reduce_switch<W: Write>(&self, output: &mut W) -> Result<(), std::io::Error> {
+    fn write_visitor_reduce_switch(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         writeln!(output, "switch(rule) {{")?;
         for (rule, rule_index) in &self.rule_index_map {
             writeln!(output, "case {}: {{", rule_index)?;
@@ -434,46 +375,25 @@ impl<'parser> CodeWriter<'parser> {
         Ok(())
     }
 
-    fn write_impl_header<W: Write + ?Sized>(&self, output: &mut W) -> Result<(), std::io::Error> {
-        let mut non_terminal_enum_variants = Vec::new();
-        self.write_non_terminal_enum_variants(&mut non_terminal_enum_variants)?;
+    fn write_impl_header(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
+        let mut writer = self.parser_impl_header_template.writer();
+        writer.substitute("non_terminal_enum_variants", |w| {
+            self.write_non_terminal_enum_variants(w)
+        });
+        writer.substitute("visitor_reduce_switch", |w| {
+            self.write_visitor_reduce_switch(w)
+        });
+        writer.substitute("entry_state", |w| {
+            write!(w, "{}", self.parser_table.entry_state())
+        });
 
-        let mut visitor_reduce_switch = Vec::new();
-        self.write_visitor_reduce_switch(&mut visitor_reduce_switch)?;
-
-        let context = ImplHeaderContext {
-            non_terminal_enum_variants: String::from_utf8(non_terminal_enum_variants).unwrap(),
-            visitor_reduce_switch: String::from_utf8(visitor_reduce_switch).unwrap(),
-            entry_state: format!("{}", self.parser_table.entry_state()),
-        };
-
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("parser_impl_header", &context)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+        writer.write(output)
     }
 
-    fn write_visitor_header<W: Write + ?Sized>(
-        &self,
-        output: &mut W,
-    ) -> Result<(), std::io::Error> {
-        let mut visitor_methods = Vec::new();
-        self.write_visitor_methods(&mut visitor_methods)?;
-
-        let context: VisitorContext = VisitorContext {
-            visitor_methods: String::from_utf8(visitor_methods).unwrap(),
-        };
-
-        writeln!(
-            output,
-            "{}",
-            self.template
-                .render("parser_visitor_header", &context)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
-        )
+    fn write_visitor_header(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
+        let mut writer = self.visitor_header_template.writer();
+        writer.substitute("visitor_methods", |w| self.write_visitor_methods(w));
+        writer.write(output)
     }
 }
 
