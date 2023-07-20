@@ -266,7 +266,8 @@ impl<'parser> CodeWriter<'parser> {
         for (non_terminal, rules) in &self.rules_by_non_terminal {
             let non_terminal_name = self.get_non_terminal_name(non_terminal);
             if rules.len() != 1 {
-                for (i, _rule) in rules.iter().enumerate() {
+                for (i, rule) in rules.iter().enumerate() {
+                    writeln!(output, "// {}", rule.display(self.grammar))?;
                     writeln!(
                         output,
                         "virtual void reduce_{}_{}() = 0;",
@@ -275,6 +276,7 @@ impl<'parser> CodeWriter<'parser> {
                     )?;
                 }
             } else {
+                writeln!(output, "// {}", rules[0].display(self.grammar))?;
                 writeln!(output, "virtual void reduce_{}() = 0;", non_terminal_name)?;
             }
         }
