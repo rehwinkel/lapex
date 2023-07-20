@@ -20,10 +20,10 @@ impl<'parser> CodeWriter<'parser> {
         grammar: &'parser Grammar,
         parser_table: &'parser LLParserTable,
     ) -> CodeWriter<'parser> {
-        let parser_header_template = Template::new(include_str!("parser_header.tpl"));
-        let parser_impl_header_template = Template::new(include_str!("parser_impl_header.tpl"));
-        let parser_impl_template = Template::new(include_str!("parser_impl.tpl"));
-        let visitor_header_template = Template::new(include_str!("parser_visitor_header.tpl"));
+        let parser_header_template = Template::new(include_str!("parser.h.tpl"));
+        let parser_impl_header_template = Template::new(include_str!("parser_impl.h.tpl"));
+        let parser_impl_template = Template::new(include_str!("parser.cpp.tpl"));
+        let visitor_header_template = Template::new(include_str!("visitor.h.tpl"));
         CodeWriter {
             grammar,
             parser_table,

@@ -25,10 +25,10 @@ struct CodeWriter<'parser> {
 
 impl<'parser> CodeWriter<'parser> {
     fn new(grammar: &'parser Grammar<'parser>, parser_table: &'parser ActionGotoTable) -> Self {
-        let parser_header_template = Template::new(include_str!("parser_header.tpl"));
-        let parser_impl_header_template = Template::new(include_str!("parser_impl_header.tpl"));
-        let parser_impl_template = Template::new(include_str!("parser_impl.tpl"));
-        let visitor_header_template = Template::new(include_str!("parser_visitor_header.tpl"));
+        let parser_header_template = Template::new(include_str!("parser.h.tpl"));
+        let parser_impl_header_template = Template::new(include_str!("parser_impl.h.tpl"));
+        let parser_impl_template = Template::new(include_str!("parser.cpp.tpl"));
+        let visitor_header_template = Template::new(include_str!("visitor.h.tpl"));
 
         let mut rules_by_non_terminal = HashMap::new();
         for rule in grammar.rules() {

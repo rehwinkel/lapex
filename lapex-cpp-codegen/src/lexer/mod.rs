@@ -34,8 +34,8 @@ impl<'lexer> LexerCodeWriter<'lexer> {
         alphabet: &'lexer [RangeInclusive<u32>],
         dfa: &'lexer Dfa<Vec<String>, usize>,
     ) -> Self {
-        let lexer_header_template = Template::new(include_str!("lexer_header.tpl"));
-        let lexer_impl_template = Template::new(include_str!("lexer_impl.tpl"));
+        let lexer_header_template = Template::new(include_str!("lexer.h.tpl"));
+        let lexer_impl_template = Template::new(include_str!("lexer.cpp.tpl"));
         LexerCodeWriter {
             alphabet,
             dfa,
@@ -121,8 +121,8 @@ struct TokensCodeWriter<'lexer> {
 
 impl<'lexer> TokensCodeWriter<'lexer> {
     fn new(rules: &'lexer [TokenRule]) -> Self {
-        let tokens_header_template = Template::new(include_str!("tokens_header.tpl"));
-        let tokens_impl_template = Template::new(include_str!("tokens_impl.tpl"));
+        let tokens_header_template = Template::new(include_str!("tokens.h.tpl"));
+        let tokens_impl_template = Template::new(include_str!("tokens.cpp.tpl"));
         TokensCodeWriter {
             rules,
             tokens_header_template,
