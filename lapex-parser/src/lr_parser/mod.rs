@@ -1,11 +1,15 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap, HashSet},
     fmt::Display,
+    io::Write,
 };
 
 use petgraph::{graph::NodeIndex, prelude::DiGraph, visit::EdgeRef, Direction::Outgoing, Graph};
 
-use crate::grammar::{Grammar, Rule, Symbol};
+use crate::{
+    grammar::{Grammar, Rule, Symbol},
+    util::compute_first_sets,
+};
 
 use self::bidimap::BidiMap;
 
@@ -17,11 +21,15 @@ pub use codegen::LRParserCodeGen;
 
 use item::Item;
 
-type ItemSet<'grammar> = BTreeSet<Item<'grammar>>;
+type ItemSet<'grammar, const N: usize> = BTreeSet<Item<'grammar, N>>;
 
-fn expand_item<'grammar>(item: Item<'grammar>, grammar: &'grammar Grammar) -> ItemSet<'grammar> {
-    let mut item_set: ItemSet<'grammar> = BTreeSet::new();
-    let mut to_expand: Vec<Item> = Vec::new();
+fn expand_item<'grammar, const N: usize>(
+    item: Item<'grammar, N>,
+    grammar: &'grammar Grammar,
+    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
+) -> ItemSet<'grammar, N> {
+    let mut item_set: ItemSet<'grammar, N> = BTreeSet::new();
+    let mut to_expand: Vec<Item<N>> = Vec::new();
     item_set.insert(item.clone());
     to_expand.push(item);
     while !to_expand.is_empty() {
@@ -31,10 +39,35 @@ fn expand_item<'grammar>(item: Item<'grammar>, grammar: &'grammar Grammar) -> It
                 // since LHS is always nonterminal, no additional check is needed
                 if let Some(lhs) = rule.lhs() {
                     if lhs == symbol_after_dot {
-                        let item = Item::from(rule);
-                        if !item_set.contains(&item) {
-                            item_set.insert(item.clone());
-                            to_expand.push(item);
+                        if N > 1 {
+                            panic!("LR(N) with N > 1 not supported");
+                        }
+                        let follow_symbol = top.symbol_after_dot_offset(1);
+                        let lookaheads = if N > 0 {
+                            if let Some(follow_symbol) = follow_symbol {
+                                match follow_symbol {
+                                    t @ Symbol::Terminal(_) => vec![[t; N]],
+                                    nt @ Symbol::NonTerminal(_) => first_sets
+                                        .get(&nt)
+                                        .unwrap()
+                                        .iter()
+                                        .map(|s| [*s; N])
+                                        .collect(),
+                                    _ => unreachable!(),
+                                }
+                            } else {
+                                vec![top.lookahead().clone()]
+                            }
+                        } else {
+                            vec![top.lookahead().clone()]
+                        };
+
+                        for lookahead in lookaheads {
+                            let item = Item::new(rule, lookahead);
+                            if !item_set.contains(&item) {
+                                item_set.insert(item.clone());
+                                to_expand.push(item);
+                            }
                         }
                     }
                 }
@@ -44,13 +77,13 @@ fn expand_item<'grammar>(item: Item<'grammar>, grammar: &'grammar Grammar) -> It
     item_set
 }
 
-struct ParserGraph<'grammar> {
-    state_map: BidiMap<ItemSet<'grammar>, NodeIndex>,
+struct ParserGraph<'grammar, const N: usize> {
+    state_map: BidiMap<ItemSet<'grammar, N>, NodeIndex>,
     graph: Graph<(), Symbol>,
     entry_state: Option<NodeIndex>,
 }
 
-impl<'grammar> ParserGraph<'grammar> {
+impl<'grammar, const N: usize> ParserGraph<'grammar, N> {
     fn new() -> Self {
         ParserGraph {
             state_map: BidiMap::new(),
@@ -59,17 +92,17 @@ impl<'grammar> ParserGraph<'grammar> {
         }
     }
 
-    fn add_state(&mut self, set: ItemSet<'grammar>) -> NodeIndex {
+    fn add_state(&mut self, set: ItemSet<'grammar, N>) -> NodeIndex {
         let entry_node = self.graph.add_node(());
         self.state_map.insert(set, entry_node);
         entry_node
     }
 
-    fn get_item_set(&self, state: &NodeIndex) -> Option<&ItemSet<'grammar>> {
+    fn get_item_set(&self, state: &NodeIndex) -> Option<&ItemSet<'grammar, N>> {
         self.state_map.get_b_to_a(state)
     }
 
-    fn get_state(&self, set: &ItemSet<'grammar>) -> Option<&NodeIndex> {
+    fn get_state(&self, set: &ItemSet<'grammar, N>) -> Option<&NodeIndex> {
         self.state_map.get_a_to_b(set)
     }
 
@@ -83,9 +116,12 @@ impl<'grammar> ParserGraph<'grammar> {
     }
 }
 
-fn generate_parser_graph<'grammar>(grammar: &'grammar Grammar) -> ParserGraph<'grammar> {
-    let entry_item = Item::from(grammar.entry_rule());
-    let entry_item_set = expand_item(entry_item, grammar);
+fn generate_parser_graph<'grammar, const N: usize>(
+    grammar: &'grammar Grammar,
+    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
+) -> ParserGraph<'grammar, N> {
+    let entry_item = Item::new(grammar.entry_rule(), [Symbol::End; N]);
+    let entry_item_set = expand_item(entry_item, grammar, first_sets);
     let mut parser_graph = ParserGraph::new();
     let entry_state = parser_graph.add_state(entry_item_set);
     parser_graph.entry_state = Some(entry_state);
@@ -95,13 +131,13 @@ fn generate_parser_graph<'grammar>(grammar: &'grammar Grammar) -> ParserGraph<'g
 
     while let Some(start_state) = unprocessed_states.pop() {
         let item_set = parser_graph.get_item_set(&start_state).unwrap();
-        let mut transition_map: HashMap<Symbol, ItemSet<'grammar>> = HashMap::new();
+        let mut transition_map: HashMap<Symbol, ItemSet<'grammar, N>> = HashMap::new();
         for item in item_set {
             if let Some(transition_symbol) = item.symbol_after_dot() {
                 let mut target_item = item.clone();
                 if target_item.rule().lhs().is_some() {
                     target_item.advance_dot();
-                    let target_item_set = expand_item(target_item, grammar);
+                    let target_item_set = expand_item(target_item, grammar, first_sets);
                     let transition_set = transition_map
                         .entry(transition_symbol)
                         .or_insert(BTreeSet::new());
@@ -124,36 +160,54 @@ fn generate_parser_graph<'grammar>(grammar: &'grammar Grammar) -> ParserGraph<'g
 }
 
 #[derive(Debug)]
-pub enum Conflict<'grammar> {
+pub enum Conflict<'grammar, const N: usize> {
     ShiftReduce {
-        item_to_reduce: Item<'grammar>,
+        item_to_reduce: Item<'grammar, N>,
         shift_symbol: Symbol,
     },
     ReduceReduce {
-        items: Vec<Item<'grammar>>,
+        items: Vec<Item<'grammar, N>>,
     },
 }
 
-fn find_conflicts<'grammar>(parser_graph: &ParserGraph<'grammar>) -> Vec<Conflict<'grammar>> {
+fn find_conflicts<'grammar, const N: usize>(
+    parser_graph: &ParserGraph<'grammar, N>,
+) -> Vec<Conflict<'grammar, N>> {
     let mut conflicts = Vec::new();
     for (item_set, state) in parser_graph.state_map.iter() {
-        let mut reducing_items = Vec::new();
+        let mut reducing_items: HashMap<[Symbol; N], Vec<&Item<N>>> = HashMap::new();
         for item in item_set {
             if item.symbol_after_dot().is_none() {
-                reducing_items.push(item);
+                reducing_items
+                    .entry(item.lookahead().clone())
+                    .or_insert(Vec::new())
+                    .push(item);
             }
         }
-        if reducing_items.len() > 1 {
-            conflicts.push(Conflict::ReduceReduce {
-                items: reducing_items.into_iter().map(|i| i.clone()).collect(),
-            })
-        } else if reducing_items.len() == 1 {
-            let outgoing_edges = parser_graph.graph.edges_directed(*state, Outgoing);
-            for edge in outgoing_edges {
-                conflicts.push(Conflict::ShiftReduce {
-                    item_to_reduce: reducing_items.first().map(|i| *i).unwrap().clone(),
-                    shift_symbol: *edge.weight(),
-                })
+        for (lookahead, reducing_items) in reducing_items {
+            if reducing_items.len() > 1 {
+                conflicts.push(Conflict::ReduceReduce {
+                    items: reducing_items.into_iter().map(|i| i.clone()).collect(),
+                });
+            } else if reducing_items.len() == 1 {
+                let outgoing_edges = parser_graph.graph.edges_directed(*state, Outgoing);
+                for edge in outgoing_edges {
+                    if N > 1 {
+                        panic!("LR(N) with N > 1 not supported");
+                    } else if N == 1 {
+                        if lookahead[0] == *edge.weight() {
+                            conflicts.push(Conflict::ShiftReduce {
+                                item_to_reduce: reducing_items.first().map(|i| *i).unwrap().clone(),
+                                shift_symbol: *edge.weight(),
+                            })
+                        }
+                    } else {
+                        conflicts.push(Conflict::ShiftReduce {
+                            item_to_reduce: reducing_items.first().map(|i| *i).unwrap().clone(),
+                            shift_symbol: *edge.weight(),
+                        })
+                    }
+                }
             }
         }
     }
@@ -229,27 +283,34 @@ impl<'grammar> ActionGotoTable<'grammar> {
     }
 
     fn insert_reduce(&mut self, state: NodeIndex, symbol: Symbol, rule: &'grammar Rule) {
-        self.entries
+        let prev_entry = self
+            .entries
             .insert((state.index(), symbol), TableEntry::Reduce { rule });
+        assert!(prev_entry.is_none());
     }
 
     fn insert_shift(&mut self, state: NodeIndex, symbol: Symbol, target: NodeIndex) {
-        self.entries.insert(
+        let prev_entry = self.entries.insert(
             (state.index(), symbol),
             TableEntry::Shift {
                 target: target.index(),
             },
         );
+        assert!(prev_entry.is_none());
     }
 
     fn insert_error(&mut self, state: NodeIndex, symbol: Symbol) {
-        self.entries
+        let prev_entry = self
+            .entries
             .insert((state.index(), symbol), TableEntry::Error);
+        assert!(prev_entry.is_none());
     }
 
     fn insert_accept(&mut self, state: NodeIndex, symbol: Symbol) {
-        self.entries
+        let prev_entry = self
+            .entries
             .insert((state.index(), symbol), TableEntry::Accept);
+        assert!(prev_entry.is_none());
     }
 
     pub fn state_has_shift(&self, state: usize, grammar: &'grammar Grammar) -> bool {
@@ -265,10 +326,15 @@ impl<'grammar> ActionGotoTable<'grammar> {
     }
 }
 
-pub fn generate_table<'grammar>(
+pub fn generate_table<'grammar, const N: usize>(
     grammar: &'grammar Grammar,
-) -> Result<ActionGotoTable<'grammar>, Vec<Conflict<'grammar>>> {
-    let parser_graph = generate_parser_graph(grammar);
+) -> Result<ActionGotoTable<'grammar>, Vec<Conflict<'grammar, N>>> {
+    let first_sets = if N > 0 {
+        compute_first_sets(grammar)
+    } else {
+        HashMap::new()
+    };
+    let parser_graph = generate_parser_graph(grammar, &first_sets);
     let conflicts = find_conflicts(&parser_graph);
     if !conflicts.is_empty() {
         return Err(conflicts);
@@ -277,14 +343,21 @@ pub fn generate_table<'grammar>(
     let entry_state = parser_graph.entry_state.unwrap().index();
     let node_count = parser_graph.graph.node_indices().count();
     let mut table: ActionGotoTable<'grammar> = ActionGotoTable::new(node_count, entry_state);
-    'states: for (item_set, state) in parser_graph.state_map.iter() {
+    for (item_set, state) in parser_graph.state_map.iter() {
         for item in item_set {
             // we can continue after this since there can be at most one reducable (conflicts already checked)
             if item.symbol_after_dot().is_none() {
-                for symbol in grammar.symbols().chain(std::iter::once(Symbol::End)) {
-                    table.insert_reduce(*state, symbol, item.rule())
+                match N {
+                    0 => {
+                        for symbol in grammar.symbols().chain(std::iter::once(Symbol::End)) {
+                            table.insert_reduce(*state, symbol, item.rule())
+                        }
+                    }
+                    1 => {
+                        table.insert_reduce(*state, item.lookahead()[0], item.rule());
+                    }
+                    _ => panic!("LR(N) with N > 1 not supported"),
                 }
-                continue 'states;
             }
         }
         let reachable_states: HashMap<Symbol, NodeIndex> = parser_graph
@@ -299,11 +372,84 @@ pub fn generate_table<'grammar>(
                 if let Some(target) = reachable_states.get(&symbol) {
                     table.insert_shift(*state, symbol, *target);
                 } else {
-                    table.insert_error(*state, symbol);
+                    if table.get_entry(state.index(), symbol).is_none() {
+                        table.insert_error(*state, symbol);
+                    }
                 }
             }
         }
     }
 
     Ok(table)
+}
+
+pub fn output_table<'grammar>(
+    grammar: &'grammar Grammar,
+    table: &ActionGotoTable<'grammar>,
+    output: &mut dyn Write,
+) -> std::io::Result<()> {
+    let rule_index_map: HashMap<*const Rule, usize> = grammar
+        .rules()
+        .iter()
+        .enumerate()
+        .map(|(i, r)| (r as *const Rule, i))
+        .collect();
+    writeln!(output, "Rules:")?;
+    for (rule, index) in rule_index_map.iter() {
+        writeln!(
+            output,
+            "{}: {}",
+            index,
+            unsafe { rule.as_ref() }.unwrap().display(grammar)
+        )?;
+    }
+    writeln!(output, "")?;
+    let state_count_digits = format!("{}", table.state_count).len();
+    let mut column_sizes = Vec::new();
+    write!(output, "{: >width$}", "", width = state_count_digits)?;
+    for symbol in grammar.symbols().chain(std::iter::once(Symbol::End)) {
+        let name = grammar.get_symbol_name(&symbol);
+        column_sizes.push(name.len());
+        write!(output, "|{}", name)?;
+    }
+    writeln!(output, "|")?;
+    for state in 0..table.state_count {
+        write!(output, "{:0width$}|", state, width = state_count_digits)?;
+        for (i, symbol) in grammar
+            .symbols()
+            .chain(std::iter::once(Symbol::End))
+            .enumerate()
+        {
+            match table.get_entry(state, symbol) {
+                Some(TableEntry::Shift { target }) => {
+                    let rule_id_text = format!("s{}", target);
+                    write!(
+                        output,
+                        "{: <width$}|",
+                        rule_id_text,
+                        width = column_sizes[i]
+                    )?;
+                }
+                Some(TableEntry::Reduce { rule }) => {
+                    let rule_id_text =
+                        format!("r{}", rule_index_map.get(&(*rule as *const Rule)).unwrap());
+                    write!(
+                        output,
+                        "{: <width$}|",
+                        rule_id_text,
+                        width = column_sizes[i]
+                    )?;
+                }
+                Some(TableEntry::Error) => {
+                    write!(output, "{: <width$}|", "e", width = column_sizes[i])?
+                }
+                Some(TableEntry::Accept) => {
+                    write!(output, "{: <width$}|", "a", width = column_sizes[i])?
+                }
+                None => write!(output, "{: <width$}|", "", width = column_sizes[i])?,
+            }
+        }
+        writeln!(output, "")?;
+    }
+    Ok(())
 }

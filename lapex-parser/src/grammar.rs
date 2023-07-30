@@ -33,7 +33,7 @@ impl From<TryFromIntError> for GrammarError {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Symbol {
     Epsilon,
     End,
@@ -41,7 +41,7 @@ pub enum Symbol {
     Terminal(u32),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Rule {
     lhs: Option<u32>,
     rhs: Vec<Symbol>,

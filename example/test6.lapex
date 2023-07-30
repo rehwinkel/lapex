@@ -1,0 +1,12 @@
+token MINUS = "-";
+token PLUS = "+";
+token LPAR = "(";
+token RPAR = ")";
+token NUMBER = /(0|[1-9][0-9]*)/;
+
+entry sum;
+prod sum = expr;
+prod expr = expr MINUS term;
+prod expr = term;
+prod term = NUMBER;
+prod term = LPAR expr RPAR;

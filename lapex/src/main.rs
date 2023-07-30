@@ -13,6 +13,7 @@ use lapex_parser::lr_parser::LRParserCodeGen;
 enum ParsingAlgorithm {
     LL1,
     LR0,
+    LR1,
 }
 
 impl Display for ParsingAlgorithm {
@@ -23,6 +24,7 @@ impl Display for ParsingAlgorithm {
             match self {
                 ParsingAlgorithm::LL1 => "ll1",
                 ParsingAlgorithm::LR0 => "lr0",
+                ParsingAlgorithm::LR1 => "lr1",
             }
         )
     }
@@ -33,8 +35,10 @@ impl Display for ParsingAlgorithm {
 struct CommandLine {
     #[arg(required = true)]
     grammar: String,
-    #[arg(long, help = "Do not generate a the lexer")]
+    #[arg(long, help = "Do not generate a lexer")]
     no_lexer: bool,
+    #[arg(long, help = "Output the parser table")]
+    table: bool,
     #[arg(short, long, help = "The parser algorithm to use", default_value_t = ParsingAlgorithm::LL1)]
     algorithm: ParsingAlgorithm,
     #[arg(
@@ -76,7 +80,24 @@ fn main() {
             cpp_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
         ParsingAlgorithm::LR0 => {
-            let parser_table = lapex_parser::lr_parser::generate_table(&grammar).unwrap();
+            let parser_table = lapex_parser::lr_parser::generate_table::<0>(&grammar).unwrap();
+            if cli.table {
+                gen.generate_code("table", |output| {
+                    lapex_parser::lr_parser::output_table(&grammar, &parser_table, output)
+                })
+                .unwrap();
+            }
+            let cpp_codegen = lapex_cpp_codegen::CppLRParserCodeGen::new();
+            cpp_codegen.generate_code(&grammar, &parser_table, &mut gen);
+        }
+        ParsingAlgorithm::LR1 => {
+            let parser_table = lapex_parser::lr_parser::generate_table::<1>(&grammar).unwrap();
+            if cli.table {
+                gen.generate_code("table", |output| {
+                    lapex_parser::lr_parser::output_table(&grammar, &parser_table, output)
+                })
+                .unwrap();
+            }
             let cpp_codegen = lapex_cpp_codegen::CppLRParserCodeGen::new();
             cpp_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }

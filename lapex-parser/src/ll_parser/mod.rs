@@ -6,6 +6,7 @@ use std::num::NonZeroU32;
 pub use codegen::LLParserCodeGen;
 
 use crate::grammar::{Grammar, GrammarError, Symbol};
+use crate::util::{compute_first_sets, get_first_terminals_of_sequence};
 
 mod codegen;
 
@@ -16,7 +17,7 @@ fn get_follow_symbols_of_remainder(
     follow_sets: &HashMap<Symbol, HashSet<Symbol>>,
 ) -> HashSet<Symbol> {
     let mut result_set = HashSet::new();
-    let remainder_first_set = get_first_symbols_of_sequence(remainder, first_sets);
+    let remainder_first_set = get_first_terminals_of_sequence(remainder, first_sets);
     let remainder_first_has_epsilon = remainder_first_set.contains(&Symbol::Epsilon);
     let should_add_lhs_follow_set = remainder_first_has_epsilon || remainder.is_empty();
     if should_add_lhs_follow_set {
@@ -71,76 +72,6 @@ fn compute_follow_sets(
     }
 
     follow_sets
-}
-
-fn get_first_symbols_of_sequence(
-    sequence: &[Symbol],
-    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
-) -> HashSet<Symbol> {
-    let epsilon_first_set = {
-        let mut new_set = HashSet::new();
-        new_set.insert(Symbol::Epsilon);
-        new_set
-    };
-
-    let mut result_set = HashSet::new();
-    for i in 0..sequence.len() {
-        let symbol = sequence[i];
-        let is_last = i + 1 == sequence.len();
-        match symbol {
-            Symbol::End | Symbol::Terminal(_) => {
-                result_set.insert(symbol);
-                return result_set;
-            }
-            Symbol::Epsilon | Symbol::NonTerminal(_) => {
-                let first_set_for_symbol = if symbol == Symbol::Epsilon {
-                    &epsilon_first_set
-                } else {
-                    first_sets.get(&symbol).unwrap()
-                };
-                let has_epsilon = first_set_for_symbol.contains(&Symbol::Epsilon);
-                for first_symbol in first_set_for_symbol {
-                    if first_symbol != &Symbol::Epsilon {
-                        result_set.insert(*first_symbol);
-                    }
-                }
-                if !has_epsilon {
-                    break;
-                } else {
-                    if is_last {
-                        result_set.insert(Symbol::Epsilon);
-                    }
-                }
-            }
-        }
-    }
-    result_set
-}
-
-fn compute_first_sets(grammar: &Grammar) -> HashMap<Symbol, HashSet<Symbol>> {
-    // init empty first sets
-    let mut first_sets = HashMap::new();
-    for nt in grammar.non_terminals() {
-        first_sets.insert(nt, HashSet::new());
-    }
-    // repeat until no more changes occur
-    loop {
-        let mut inserted_any = false;
-        for rule in grammar.rules() {
-            let first_for_rhs = get_first_symbols_of_sequence(rule.rhs(), &first_sets);
-            let first_set_of_lhs = first_sets.get_mut(&rule.lhs().unwrap()).unwrap();
-            for symbol in first_for_rhs {
-                let was_inserted = first_set_of_lhs.insert(symbol);
-                inserted_any = inserted_any || was_inserted;
-            }
-        }
-        // if nothing new was added, we are done
-        if !inserted_any {
-            break;
-        }
-    }
-
-    first_sets
 }
 
 #[derive(Debug, PartialEq)]
@@ -253,7 +184,7 @@ pub fn generate_table(grammar: &Grammar) -> Result<LLParserTable, LLParserError>
     let follow_sets = compute_follow_sets(&grammar, &first_sets);
     let mut parser_table = LLParserTable::new();
     for rule in grammar.rules() {
-        let first_set_of_rhs = get_first_symbols_of_sequence(rule.rhs(), &first_sets);
+        let first_set_of_rhs = get_first_terminals_of_sequence(rule.rhs(), &first_sets);
         for symbol in first_set_of_rhs.iter() {
             match symbol {
                 Symbol::End | Symbol::Terminal(_) => {
