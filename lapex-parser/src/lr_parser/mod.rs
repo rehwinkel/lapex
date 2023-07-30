@@ -165,6 +165,7 @@ pub enum TableEntry<'grammar> {
     Shift { target: usize },
     Reduce { rule: &'grammar Rule },
     Error,
+    Accept,
 }
 
 impl<'grammar> Display for TableEntry<'grammar> {
@@ -173,6 +174,7 @@ impl<'grammar> Display for TableEntry<'grammar> {
             TableEntry::Shift { target } => write!(f, "s{}", target),
             TableEntry::Reduce { rule } => write!(f, "r{:?}", rule),
             TableEntry::Error => write!(f, "er"),
+            TableEntry::Accept => write!(f, "ac"),
         }
     }
 }
@@ -245,6 +247,11 @@ impl<'grammar> ActionGotoTable<'grammar> {
             .insert((state.index(), symbol), TableEntry::Error);
     }
 
+    fn insert_accept(&mut self, state: NodeIndex, symbol: Symbol) {
+        self.entries
+            .insert((state.index(), symbol), TableEntry::Accept);
+    }
+
     pub fn state_has_shift(&self, state: usize, grammar: &'grammar Grammar) -> bool {
         self.iter_state_non_terminals(state, grammar)
             .chain(self.iter_state_terminals(state, grammar))
@@ -267,11 +274,12 @@ pub fn generate_table<'grammar>(
         return Err(conflicts);
     }
 
+    let entry_state = parser_graph.entry_state.unwrap().index();
     let node_count = parser_graph.graph.node_indices().count();
-    let mut table: ActionGotoTable<'grammar> =
-        ActionGotoTable::new(node_count, parser_graph.entry_state.unwrap().index());
+    let mut table: ActionGotoTable<'grammar> = ActionGotoTable::new(node_count, entry_state);
     'states: for (item_set, state) in parser_graph.state_map.iter() {
         for item in item_set {
+            // we can continue after this since there can be at most one reducable (conflicts already checked)
             if item.symbol_after_dot().is_none() {
                 for symbol in grammar.symbols().chain(std::iter::once(Symbol::End)) {
                     table.insert_reduce(*state, symbol, item.rule())
@@ -285,12 +293,17 @@ pub fn generate_table<'grammar>(
             .map(|e| (*e.weight(), e.target()))
             .collect();
         for symbol in grammar.symbols() {
-            if let Some(target) = reachable_states.get(&symbol) {
-                table.insert_shift(*state, symbol, *target);
+            if symbol == *grammar.entry_point() && state.index() == entry_state {
+                table.insert_accept(*state, symbol);
             } else {
-                table.insert_error(*state, symbol);
+                if let Some(target) = reachable_states.get(&symbol) {
+                    table.insert_shift(*state, symbol, *target);
+                } else {
+                    table.insert_error(*state, symbol);
+                }
             }
         }
     }
+
     Ok(table)
 }

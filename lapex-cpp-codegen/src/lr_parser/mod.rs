@@ -1,14 +1,15 @@
 use std::{
     collections::HashMap,
     io::{Error, Write},
-    num::NonZeroUsize,
 };
 
 use lapex_codegen::{GeneratedCodeWriter, Template};
 use lapex_parser::{
     grammar::{Grammar, Rule, Symbol},
-    lr_parser::{ActionGotoTable, LRParserCodeGen, TableEntry},
+    lr_parser::{ActionGotoTable, LRParserCodeGen},
 };
+
+mod action_goto;
 
 use crate::CppLRParserCodeGen;
 
@@ -19,7 +20,7 @@ struct CodeWriter<'parser> {
     parser_impl_header_template: Template<'static>,
     parser_impl_template: Template<'static>,
     visitor_header_template: Template<'static>,
-    rule_index_map: HashMap<*const Rule, NonZeroUsize>,
+    rule_index_map: HashMap<*const Rule, usize>,
     rules_by_non_terminal: HashMap<Symbol, Vec<&'parser Rule>>,
 }
 
@@ -39,11 +40,11 @@ impl<'parser> CodeWriter<'parser> {
                     .push(rule);
             }
         }
-        let rule_index_map: HashMap<*const Rule, NonZeroUsize> = grammar
+        let rule_index_map: HashMap<*const Rule, usize> = grammar
             .rules()
             .iter()
             .enumerate()
-            .map(|(i, r)| (r as *const Rule, NonZeroUsize::new(i + 1).unwrap()))
+            .map(|(i, r)| (r as *const Rule, i))
             .collect();
         CodeWriter {
             grammar,
@@ -79,182 +80,6 @@ impl<'parser> CodeWriter<'parser> {
             self.write_non_terminal_enum_name(non_terminal, output)?;
             writeln!(output, ",")?;
         }
-        Ok(())
-    }
-
-    fn write_goto_switch_cases<'a, I: Iterator<Item = (Symbol, Option<&'a TableEntry<'a>>)>>(
-        &self,
-        states: I,
-        output: &mut dyn Write,
-    ) -> Result<(), Error> {
-        for (symbol, entry) in states {
-            if let Some(entry) = entry {
-                match entry {
-                    TableEntry::Shift { target: _ } => {
-                        write!(output, "case ")?;
-
-                        if let Symbol::NonTerminal(_) = symbol {
-                            write!(output, "NonTerminalType::")?;
-                            self.write_non_terminal_enum_name(symbol, output)?;
-                        } else if let Symbol::Terminal(terminal_index) = symbol {
-                            write!(
-                                output,
-                                "lexer::TokenType::TK_{}",
-                                self.grammar.get_token_name(terminal_index)
-                            )?;
-                        }
-                        writeln!(output, ":")?;
-                    }
-                    _ => {}
-                }
-                match entry {
-                    TableEntry::Shift { target } => {
-                        writeln!(output, "return {};", target)?;
-                    }
-                    _ => (),
-                }
-            }
-        }
-        writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Parsing error\"); ")?;
-        Ok(())
-    }
-
-    fn write_action_switch_cases<'a, I: Iterator<Item = (Symbol, Option<&'a TableEntry<'a>>)>>(
-        &self,
-        states: I,
-        output: &mut dyn Write,
-    ) -> Result<(), Error> {
-        for (symbol, entry) in states {
-            if let Some(entry) = entry {
-                match entry {
-                    TableEntry::Shift { target: _ } | TableEntry::Reduce { rule: _ } => {
-                        write!(output, "case ")?;
-
-                        match symbol {
-                            Symbol::NonTerminal(_) => {
-                                write!(output, "NonTerminalType::")?;
-                                self.write_non_terminal_enum_name(symbol, output)?;
-                            }
-                            Symbol::Terminal(terminal_index) => {
-                                write!(
-                                    output,
-                                    "lexer::TokenType::TK_{}",
-                                    self.grammar.get_token_name(terminal_index)
-                                )?;
-                            }
-                            Symbol::End => {
-                                write!(output, "lexer::TokenType::TK_EOF",)?;
-                            }
-                            _ => (),
-                        }
-                        writeln!(output, ":")?;
-                    }
-                    _ => {}
-                }
-                match entry {
-                    TableEntry::Shift { target: _ } => {
-                        writeln!(output, "return 0;")?;
-                    }
-                    TableEntry::Reduce { rule } => {
-                        let rule_ptr = (*rule) as *const Rule;
-                        let rule_index = self.rule_index_map.get(&rule_ptr);
-                        writeln!(output, "return {};", rule_index.unwrap())?;
-                    }
-                    _ => (),
-                }
-            }
-        }
-        writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Parsing error\"); ")?;
-        Ok(())
-    }
-
-    fn write_goto_table(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
-        writeln!(output, "switch (state) {{")?;
-        for state in 0..self.parser_table.states() {
-            if self.parser_table.state_has_shift(state, self.grammar) {
-                writeln!(output, "case {}: {{", state)?;
-                writeln!(
-                    output,
-                    "if (current_symbol.kind == SymbolKind::Terminal) {{"
-                )?;
-                writeln!(
-                    output,
-                    "switch (static_cast<lexer::TokenType>(current_symbol.identifier)) {{"
-                )?;
-                self.write_goto_switch_cases(
-                    self.parser_table.iter_state_terminals(state, self.grammar),
-                    output,
-                )?;
-                writeln!(output, "}}")?;
-                writeln!(
-                    output,
-                    "}} else if (current_symbol.kind == SymbolKind::NonTerminal) {{"
-                )?;
-                writeln!(
-                    output,
-                    "switch (static_cast<parser::NonTerminalType>(current_symbol.identifier)) {{"
-                )?;
-                self.write_goto_switch_cases(
-                    self.parser_table
-                        .iter_state_non_terminals(state, self.grammar),
-                    output,
-                )?;
-                writeln!(output, "}}")?;
-                writeln!(output, "}} else {{")?;
-                writeln!(output, "throw std::runtime_error(\"There was a state atop the stack when there should have been a symbol. This should never happen!\");")?;
-                writeln!(output, "}}")?;
-                writeln!(output, "}}")?;
-                writeln!(output, "break;")?;
-            }
-        }
-        writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Encountered a parser state that does not exist. This should never happen!\"); ")?;
-        writeln!(output, "}}")?;
-        Ok(())
-    }
-
-    fn write_shift_or_reduce_table(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
-        writeln!(output, "switch (state) {{")?;
-        for state in 0..self.parser_table.states() {
-            writeln!(output, "case {}: {{", state)?;
-            writeln!(
-                output,
-                "if (lookahead_symbol.kind == SymbolKind::Terminal) {{"
-            )?;
-            writeln!(
-                output,
-                "switch (static_cast<lexer::TokenType>(lookahead_symbol.identifier)) {{"
-            )?;
-            self.write_action_switch_cases(
-                self.parser_table.iter_state_terminals(state, self.grammar),
-                output,
-            )?;
-            writeln!(output, "}}")?;
-            writeln!(
-                output,
-                "}} else if (lookahead_symbol.kind == SymbolKind::NonTerminal) {{"
-            )?;
-            writeln!(
-                output,
-                "switch (static_cast<parser::NonTerminalType>(lookahead_symbol.identifier)) {{"
-            )?;
-            self.write_action_switch_cases(
-                self.parser_table
-                    .iter_state_non_terminals(state, self.grammar),
-                output,
-            )?;
-            writeln!(output, "}}")?;
-            writeln!(output, "}} else {{")?;
-            writeln!(output, "throw std::runtime_error(\"There was a state atop the stack when there should have been a symbol. This should never happen!\");")?;
-            writeln!(output, "}}")?;
-            writeln!(output, "}}")?;
-            writeln!(output, "break;")?;
-        }
-        writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Encountered a parser state that does not exist. This should never happen!\"); ")?;
-        writeln!(output, "}}")?;
         Ok(())
     }
 
@@ -304,7 +129,6 @@ impl<'parser> CodeWriter<'parser> {
             writeln!(output, "case {}: {{", rule_index)?;
             let rule = get_rule_from_pointer(rule);
             let symbols_to_reduce = rule.rhs().len();
-            let is_accepting_rule = rule.lhs().unwrap() == *self.grammar.entry_point();
             writeln!(
                 output,
                 "for (size_t i = 0; i < {}; i++) {{",
@@ -318,17 +142,8 @@ impl<'parser> CodeWriter<'parser> {
             write!(output, "Symbol reduced_non_terminal{{SymbolKind::NonTerminal, static_cast<uint32_t>(NonTerminalType::")?;
             self.write_non_terminal_enum_name(rule.lhs().unwrap(), output)?;
             writeln!(output, ")}};")?;
-            if is_accepting_rule {
-                writeln!(output, "// accepting! remove state from parse stack")?;
-                writeln!(output, "parse_stack.pop_back();")?;
-            } else {
-                writeln!(output, "parse_stack.push_back(reduced_non_terminal);")?;
-            }
-            writeln!(
-                output,
-                "return {};",
-                if is_accepting_rule { "true" } else { "false" }
-            )?;
+            writeln!(output, "parse_stack.push_back(reduced_non_terminal);")?;
+            writeln!(output, "return;")?;
             writeln!(output, "}}")?;
         }
         writeln!(output, "default:")?;
@@ -339,7 +154,7 @@ impl<'parser> CodeWriter<'parser> {
 
     fn write_impl(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         let mut writer = self.parser_impl_template.writer();
-        writer.substitute("action_table", |w| self.write_shift_or_reduce_table(w));
+        writer.substitute("action_table", |w| self.write_action_table(w));
         writer.substitute("goto_table", |w| self.write_goto_table(w));
         writer.substitute("stack_reduce_table", |w| self.write_stack_reduce_table(w));
         writer.write(output)
