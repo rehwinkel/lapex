@@ -1,0 +1,22 @@
+token KW_SELECT = "SELECT";
+token KW_FROM = "FROM";
+token KW_WHERE = "WHERE";
+token KW_AND = "AND";
+token SEMI = ";";
+token ASTERISK = "*";
+token COMMA = ",";
+token EQUALS = ",";
+token IDENT = /[a-zA-Z][a-zA-Z0-9_]/;
+token NUMBER = /(0|[1-9][0-9]*)/;
+
+entry cmd;
+prod cmd = select_cmd;
+prod select_cmd = KW_SELECT fields KW_FROM tables (KW_WHERE conditions)?;
+prod conditions = condition KW_AND conditions;
+prod conditions = condition;
+prod condition = IDENT EQUALS NUMBER;
+prod fields = ASTERISK;
+prod fields = comma_sep_idents;
+prod tables = comma_sep_idents;
+prod comma_sep_idents = IDENT COMMA comma_sep_idents;
+prod comma_sep_idents = IDENT;
