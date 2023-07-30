@@ -225,7 +225,7 @@ fn parse_pattern(input: &[u8]) -> IResult<&[u8], Pattern> {
 fn parse_token_rule(input: &[u8]) -> IResult<&[u8], TokenRule> {
     let (input, _) = tag("token")(input)?;
     let (input, _) = space1(input)?;
-    let (input, name) = take_while1(|c: u8| Into::<char>::into(c).is_ascii_alphabetic())(input)?;
+    let (input, name) = parse_symbol_name(input)?;
     let (input, _) = space1(input)?;
     let (input, _) = tag("=")(input)?;
     let (input, _) = space1(input)?;
@@ -282,7 +282,7 @@ pub enum ProductionPattern {
 }
 
 fn parse_rule_name(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
-    let (input, name) = take_while1(|c: u8| Into::<char>::into(c).is_ascii_alphabetic())(input)?;
+    let (input, name) = parse_symbol_name(input)?;
     Ok((
         input,
         ProductionPattern::Rule {
@@ -344,7 +344,7 @@ fn parse_production_pattern(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
 fn parse_production_rule(input: &[u8]) -> IResult<&[u8], ProductionRule> {
     let (input, _) = tag("prod")(input)?;
     let (input, _) = space1(input)?;
-    let (input, name) = take_while1(|c: u8| Into::<char>::into(c).is_ascii_alphabetic())(input)?;
+    let (input, name) = parse_symbol_name(input)?;
     let (input, _) = space1(input)?;
     let (input, _) = tag("=")(input)?;
     let (input, _) = space1(input)?;
@@ -359,10 +359,14 @@ fn parse_production_rule(input: &[u8]) -> IResult<&[u8], ProductionRule> {
     ))
 }
 
+fn parse_symbol_name(input: &[u8]) -> IResult<&[u8], &[u8]> {
+    take_while1(|c: u8| Into::<char>::into(c).is_ascii_alphabetic() || c == '_' as u8)(input)
+}
+
 fn parse_entry_rule(input: &[u8]) -> IResult<&[u8], EntryRule> {
     let (input, _) = tag("entry")(input)?;
     let (input, _) = space1(input)?;
-    let (input, name) = take_while1(|c: u8| Into::<char>::into(c).is_ascii_alphabetic())(input)?;
+    let (input, name) = parse_symbol_name(input)?;
     let (input, _) = tag(";")(input)?;
     Ok((
         input,
