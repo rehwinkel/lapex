@@ -1,0 +1,8 @@
+token A = "a";
+token B = "b";
+token C = "c";
+
+entry start;
+prod start = nta ntb C;
+prod nta = A;
+prod ntb = B?;

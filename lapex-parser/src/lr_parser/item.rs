@@ -81,8 +81,17 @@ impl<'grammar, const N: usize> Item<'grammar, N> {
     pub fn symbol_after_dot_offset(&self, offset: usize) -> Option<Symbol> {
         self.rule.rhs().get(self.dot_position + offset).map(|s| *s)
     }
+
     pub fn symbol_after_dot(&self) -> Option<Symbol> {
         self.symbol_after_dot_offset(0)
+    }
+
+    pub fn symbols_following_symbol_after_dot(&self) -> impl Iterator<Item = Symbol> + 'grammar {
+        self.rule
+            .rhs()
+            .iter()
+            .skip(self.dot_position + 1)
+            .map(|s| *s)
     }
 
     pub fn advance_dot(&mut self) -> bool {

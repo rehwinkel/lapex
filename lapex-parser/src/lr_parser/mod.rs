@@ -8,7 +8,7 @@ use petgraph::{graph::NodeIndex, prelude::DiGraph, visit::EdgeRef, Direction::Ou
 
 use crate::{
     grammar::{Grammar, Rule, Symbol},
-    util::compute_first_sets,
+    util::{compute_first_sets, get_first_terminals_of_sequence},
 };
 
 use self::bidimap::BidiMap;
@@ -39,31 +39,13 @@ fn expand_item<'grammar, const N: usize>(
                 // since LHS is always nonterminal, no additional check is needed
                 if let Some(lhs) = rule.lhs() {
                     if lhs == symbol_after_dot {
-                        if N > 1 {
-                            panic!("LR(N) with N > 1 not supported");
-                        }
-                        let follow_symbol = top.symbol_after_dot_offset(1);
-                        let lookaheads = if N > 0 {
-                            if let Some(follow_symbol) = follow_symbol {
-                                match follow_symbol {
-                                    t @ Symbol::Terminal(_) => vec![[t; N]],
-                                    nt @ Symbol::NonTerminal(_) => first_sets
-                                        .get(&nt)
-                                        .unwrap()
-                                        .iter()
-                                        .map(|s| [*s; N])
-                                        .collect(),
-                                    _ => unreachable!(),
-                                }
-                            } else {
-                                vec![top.lookahead().clone()]
-                            }
-                        } else {
-                            vec![top.lookahead().clone()]
-                        };
+                        let lookaheads = determine_lookaheads_to_expand(&top, first_sets, &top);
 
                         for lookahead in lookaheads {
-                            let item = Item::new(rule, lookahead);
+                            let mut item = Item::new(rule, lookahead);
+                            while let Some(Symbol::Epsilon) = item.symbol_after_dot() {
+                                item.advance_dot();
+                            }
                             if !item_set.contains(&item) {
                                 item_set.insert(item.clone());
                                 to_expand.push(item);
@@ -75,6 +57,38 @@ fn expand_item<'grammar, const N: usize>(
         }
     }
     item_set
+}
+
+fn determine_lookaheads_to_expand<const N: usize>(
+    item: &Item<N>,
+    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
+    top: &Item<'_, N>,
+) -> Vec<[Symbol; N]> {
+    if N > 1 {
+        panic!("LR(N) with N > 1 not supported");
+    }
+    let follow_symbol = item.symbol_after_dot_offset(1);
+    let lookaheads = if N > 0 {
+        if let Some(follow_symbol) = follow_symbol {
+            match follow_symbol {
+                t @ Symbol::Terminal(_) => vec![[t; N]],
+                Symbol::NonTerminal(_) => {
+                    let remaining_rhs: Vec<Symbol> = item
+                        .symbols_following_symbol_after_dot()
+                        .chain(std::iter::once(top.lookahead()[0]))
+                        .collect();
+                    let terminals = get_first_terminals_of_sequence(&remaining_rhs, first_sets);
+                    terminals.iter().map(|s| [*s; N]).collect()
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            vec![top.lookahead().clone()]
+        }
+    } else {
+        vec![top.lookahead().clone()]
+    };
+    lookaheads
 }
 
 struct ParserGraph<'grammar, const N: usize> {

@@ -128,17 +128,23 @@ impl<'parser> CodeWriter<'parser> {
         for (rule, rule_index) in &self.rule_index_map {
             writeln!(output, "case {}: {{", rule_index)?;
             let rule = get_rule_from_pointer(rule);
-            let symbols_to_reduce = rule.rhs().len();
-            writeln!(
-                output,
-                "for (size_t i = 0; i < {}; i++) {{",
-                symbols_to_reduce
-            )?;
-            writeln!(output, "parse_stack.pop_back();")?;
-            writeln!(output, "Symbol reduced_symbol = parse_stack.back();")?;
-            writeln!(output, "rev_reduced_symbols.push_back(reduced_symbol);")?;
-            writeln!(output, "parse_stack.pop_back();")?;
-            writeln!(output, "}}")?;
+            let symbols_to_reduce = rule
+                .rhs()
+                .iter()
+                .filter(|s| if let Symbol::Epsilon = s { false } else { true })
+                .count();
+            if symbols_to_reduce > 0 {
+                writeln!(
+                    output,
+                    "for (size_t i = 0; i < {}; i++) {{",
+                    symbols_to_reduce
+                )?;
+                writeln!(output, "parse_stack.pop_back();")?;
+                writeln!(output, "Symbol reduced_symbol = parse_stack.back();")?;
+                writeln!(output, "rev_reduced_symbols.push_back(reduced_symbol);")?;
+                writeln!(output, "parse_stack.pop_back();")?;
+                writeln!(output, "}}")?;
+            }
             write!(output, "Symbol reduced_non_terminal{{SymbolKind::NonTerminal, static_cast<uint32_t>(NonTerminalType::")?;
             self.write_non_terminal_enum_name(rule.lhs().unwrap(), output)?;
             writeln!(output, ")}};")?;
