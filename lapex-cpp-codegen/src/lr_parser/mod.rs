@@ -147,7 +147,8 @@ impl<'parser> CodeWriter<'parser> {
             writeln!(output, "}}")?;
         }
         writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Tried reducing non-existent rule. This should never happen!\");")?;
+        writeln!(output, "// Tried reducing non-existent rule.")?;
+        writeln!(output, "std::terminate();")?;
         writeln!(output, "}}")?;
         Ok(())
     }
@@ -187,7 +188,8 @@ impl<'parser> CodeWriter<'parser> {
             writeln!(output, "}}")?;
         }
         writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Tried reducing non-existent rule. This should never happen!\");")?;
+        writeln!(output, "// Tried reducing non-existent rule.")?;
+        writeln!(output, "std::terminate();")?;
         writeln!(output, "}}")?;
         Ok(())
     }

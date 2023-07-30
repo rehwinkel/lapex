@@ -22,7 +22,11 @@ impl<'parser> CodeWriter<'parser> {
             }
         }
         writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Parsing error\"); ")?;
+        writeln!(
+            output,
+            "// Entered state where top of stack doesn't produce a valid transition."
+        )?;
+        writeln!(output, "std::terminate();")?;
         Ok(())
     }
 
@@ -78,16 +82,37 @@ impl<'parser> CodeWriter<'parser> {
         states: I,
         output: &mut dyn Write,
     ) -> Result<(), Error> {
+        let mut expected_symbols = Vec::new();
         for (symbol, entry) in states {
             if let Some(entry) = entry {
-                let body_needed = self.write_action_case_header(entry, output, symbol)?;
-                if body_needed {
+                let entry_created = self.write_action_case_header(entry, output, symbol)?;
+                if entry_created {
+                    match symbol {
+                        Symbol::Terminal(token_index) => expected_symbols.push(Some(token_index)),
+                        Symbol::End => expected_symbols.push(None),
+                        _ => (),
+                    }
                     self.write_action_case_body(entry, output)?;
                 }
             }
         }
         writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Parsing error\"); ")?;
+        let token_names: Vec<String> = expected_symbols
+            .into_iter()
+            .map(|tk| {
+                if let Some(token_id) = tk {
+                    self.grammar.get_token_name(token_id)
+                } else {
+                    "<EOF>"
+                }
+            })
+            .map(|s| format!("'{}'", s))
+            .collect();
+        writeln!(
+            output,
+            "throw_unexpected_token_error(\"{}\", lookahead_token);",
+            token_names.join(", ")
+        )?;
         Ok(())
     }
 
@@ -180,14 +205,19 @@ impl<'parser> CodeWriter<'parser> {
                 )?;
                 writeln!(output, "}}")?;
                 writeln!(output, "}} else {{")?;
-                writeln!(output, "throw std::runtime_error(\"There was a state atop the stack when there should have been a symbol. This should never happen!\");")?;
+                writeln!(
+                    output,
+                    "// There was a state atop the stack when there should have been a symbol."
+                )?;
+                writeln!(output, "std::terminate();")?;
                 writeln!(output, "}}")?;
                 writeln!(output, "}}")?;
                 writeln!(output, "break;")?;
             }
         }
         writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Encountered a parser state that does not exist. This should never happen!\"); ")?;
+        writeln!(output, "// Encountered a parser state that does not exist.")?;
+        writeln!(output, "std::terminate();")?;
         writeln!(output, "}}")?;
         Ok(())
     }
@@ -206,7 +236,8 @@ impl<'parser> CodeWriter<'parser> {
             writeln!(output, "break;")?;
         }
         writeln!(output, "default:")?;
-        writeln!(output, "throw std::runtime_error(\"Encountered a parser state that does not exist. This should never happen!\"); ")?;
+        writeln!(output, "// Encountered a parser state that does not exist.")?;
+        writeln!(output, "std::terminate();")?;
         writeln!(output, "}}")?;
         Ok(())
     }
