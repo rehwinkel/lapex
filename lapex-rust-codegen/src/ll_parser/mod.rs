@@ -6,9 +6,10 @@ use crate::RustLLParserCodeGen;
 impl LLParserCodeGen for RustLLParserCodeGen {
     fn generate_code(
         &self,
-        grammar: &lapex_parser::grammar::Grammar,
-        parser_table: &lapex_parser::ll_parser::LLParserTable,
-        gen: &mut GeneratedCodeWriter,
+        _grammar: &lapex_parser::grammar::Grammar,
+        _parser_table: &lapex_parser::ll_parser::LLParserTable,
+        _gen: &mut GeneratedCodeWriter,
     ) {
+        todo!()
     }
 }
