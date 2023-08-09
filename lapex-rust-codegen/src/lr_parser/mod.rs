@@ -354,7 +354,7 @@ impl<'grammar> CodeWriter<'grammar> {
         let rule_visits: Vec<TokenStream> = self.make_rule_visits();
 
         let tokens = quote! {
-            pub struct Parser<T, F: Fn() -> (TokenType, T), V: Visitor<T>> {
+            pub struct Parser<T, F: FnMut() -> (TokenType, T), V: Visitor<T>> {
                 token_function: F,
                 visitor: V,
             }
@@ -386,6 +386,7 @@ impl<'grammar> CodeWriter<'grammar> {
                 State { state_id: usize }
             }
 
+            #[derive(Debug)]
             pub enum ParserError {
                 UnexpectedToken {
                     got: TokenType,
@@ -393,7 +394,21 @@ impl<'grammar> CodeWriter<'grammar> {
                 }
             }
 
-            impl<T, F: Fn() -> (TokenType, T), V: Visitor<T>> Parser<T, F, V> {
+            impl std::error::Error for ParserError {}
+
+            impl std::fmt::Display for ParserError {
+                fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    match self {
+                        ParserError::UnexpectedToken { got, expected } => write!(
+                            f,
+                            "Unexpected token {:?}, expected one of: {:?}",
+                            got, expected
+                        ),
+                    }
+                }
+            }
+
+            impl<T, F: FnMut() -> (TokenType, T), V: Visitor<T>> Parser<T, F, V> {
                 pub fn new(token_function: F, visitor: V) -> Self {
                     Parser {
                         token_function,
@@ -479,6 +494,13 @@ impl<'grammar> CodeWriter<'grammar> {
     }
 
     fn write_visitor_and_parser(&self, output: &mut dyn Write) -> std::io::Result<()> {
+        write!(
+            output,
+            "{}",
+            quote! {
+                use super::tokens::TokenType;
+            }
+        )?;
         self.write_visitor(output)?;
         self.write_parser(output)?;
         Ok(())

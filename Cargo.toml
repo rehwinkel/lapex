@@ -9,3 +9,6 @@ members = [
     "lapex-cpp-codegen",
     "lapex-rust-codegen"
 ]
+exclude = [
+    "generated/test_parser"
+]

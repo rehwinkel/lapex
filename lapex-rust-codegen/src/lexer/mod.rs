@@ -95,6 +95,8 @@ impl<'grammar> LexerCodeWriter<'grammar> {
         }
 
         let tokens = quote! {
+            use super::tokens::TokenType;
+
             pub struct Lexer<'src> {
                 src: &'src str,
                 char_iter: std::iter::Peekable<std::str::Chars<'src>>,
