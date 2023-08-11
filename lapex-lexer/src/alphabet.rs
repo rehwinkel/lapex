@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, ops::RangeInclusive};
 
-use lapex_input::{Characters, Pattern, TokenRule};
+use lapex_input::{Characters, Pattern, TokenPattern, TokenRule};
 
 #[derive(Debug)]
 pub struct Alphabet {
@@ -79,7 +79,12 @@ fn get_chars_from_pattern(chars: &mut BTreeSet<char>, pattern: &Pattern) {
 pub fn generate_alphabet(rules: &[TokenRule]) -> Alphabet {
     let mut chars = BTreeSet::new();
     for rule in rules {
-        get_chars_from_pattern(&mut chars, rule.pattern())
+        match rule.pattern() {
+            TokenPattern::Literal { characters } => {
+                get_chars_from_pattern(&mut chars, &Pattern::from_chars(characters))
+            }
+            TokenPattern::Pattern { pattern } => get_chars_from_pattern(&mut chars, pattern),
+        }
     }
     chars.insert('\0');
     chars.insert(char::MAX);

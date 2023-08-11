@@ -43,10 +43,29 @@ pub enum Pattern {
     },
 }
 
+impl Pattern {
+    pub fn from_chars(chars: &Vec<char>) -> Self {
+        Pattern::Sequence {
+            elements: chars
+                .into_iter()
+                .map(|c| Pattern::Char {
+                    chars: Characters::Single(*c),
+                })
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum TokenPattern {
+    Literal { characters: Vec<char> },
+    Pattern { pattern: Pattern },
+}
+
 #[derive(Debug)]
 pub struct TokenRule<'src> {
     name: &'src str,
-    pattern: Pattern,
+    pattern: TokenPattern,
 }
 
 impl<'src> TokenRule<'src> {
@@ -54,8 +73,15 @@ impl<'src> TokenRule<'src> {
         self.name
     }
 
-    pub fn pattern(&self) -> &Pattern {
+    pub fn pattern(&self) -> &TokenPattern {
         &self.pattern
+    }
+
+    pub fn precedence(&self) -> usize {
+        match self.pattern {
+            TokenPattern::Literal { characters: _ } => 1,
+            TokenPattern::Pattern { pattern: _ } => 0,
+        }
     }
 }
 
@@ -193,31 +219,25 @@ fn parse_regex_sequence(input: &[u8]) -> IResult<&[u8], Pattern> {
     Ok((input, Pattern::Sequence { elements }))
 }
 
-fn parse_regex_pattern(input: &[u8]) -> IResult<&[u8], Pattern> {
+fn parse_regex_pattern(input: &[u8]) -> IResult<&[u8], TokenPattern> {
     let (input, _) = tag("/")(input)?;
     let (input, seq) = parse_regex_sequence(input)?;
     let (input, _) = tag("/")(input)?;
-    Ok((input, seq))
+    Ok((input, TokenPattern::Pattern { pattern: seq }))
 }
 
-fn parse_literal_pattern(input: &[u8]) -> IResult<&[u8], Pattern> {
+fn parse_literal_pattern(input: &[u8]) -> IResult<&[u8], TokenPattern> {
     let (input, _) = tag("\"")(input)?;
     let (input, chars) = take_while1(|c| {
         let ch = Into::<char>::into(c);
         ch != '"' && ch.is_ascii()
     })(input)?;
     let (input, _) = tag("\"")(input)?;
-    let patterns: Vec<Pattern> = chars
-        .iter()
-        .map(|c| Into::<char>::into(*c))
-        .map(|c| Pattern::Char {
-            chars: Characters::Single(c),
-        })
-        .collect();
-    Ok((input, Pattern::Sequence { elements: patterns }))
+    let characters: Vec<char> = chars.iter().map(|c| Into::<char>::into(*c)).collect();
+    Ok((input, TokenPattern::Literal { characters }))
 }
 
-fn parse_pattern(input: &[u8]) -> IResult<&[u8], Pattern> {
+fn parse_pattern(input: &[u8]) -> IResult<&[u8], TokenPattern> {
     let (input, pattern) = alt((parse_literal_pattern, parse_regex_pattern))(input)?;
     Ok((input, pattern))
 }

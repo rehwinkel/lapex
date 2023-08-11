@@ -2,15 +2,15 @@ use std::collections::HashSet;
 
 use lapex_automaton::{Nfa, StateId};
 
-use lapex_input::{Characters, Pattern, TokenRule};
+use lapex_input::{Characters, Pattern, TokenPattern, TokenRule};
 
 use crate::alphabet::Alphabet;
 
-fn build_nfa_from_pattern(
+fn build_nfa_from_pattern<'rules>(
     start: StateId,
     end: StateId,
     alphabet: &Alphabet,
-    nfa: &mut Nfa<String, usize>,
+    nfa: &mut Nfa<&'rules TokenRule<'rules>, usize>,
     pattern: &Pattern,
 ) -> Option<()> {
     match &pattern {
@@ -108,15 +108,29 @@ fn build_nfa_from_pattern(
     Some(())
 }
 
-pub fn generate_nfa(alphabet: &Alphabet, rules: &[TokenRule]) -> (StateId, Nfa<String, usize>) {
+pub fn generate_nfa<'rules>(
+    alphabet: &Alphabet,
+    rules: &'rules [TokenRule],
+) -> (StateId, Nfa<&'rules TokenRule<'rules>, usize>) {
     let mut nfa = Nfa::new();
 
     let start = nfa.add_intermediate_state();
     for rule in rules {
         let rule_start = nfa.add_intermediate_state();
-        let rule_end = nfa.add_accepting_state(String::from(rule.token()));
+        let rule_end = nfa.add_accepting_state(rule);
         nfa.add_epsilon_transition(start, rule_start);
-        build_nfa_from_pattern(rule_start, rule_end, alphabet, &mut nfa, rule.pattern());
+        match rule.pattern() {
+            TokenPattern::Literal { characters } => build_nfa_from_pattern(
+                rule_start,
+                rule_end,
+                alphabet,
+                &mut nfa,
+                &Pattern::from_chars(characters),
+            ),
+            TokenPattern::Pattern { pattern } => {
+                build_nfa_from_pattern(rule_start, rule_end, alphabet, &mut nfa, pattern)
+            }
+        };
     }
     (start, nfa)
 }

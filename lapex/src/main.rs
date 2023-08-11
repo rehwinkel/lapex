@@ -129,7 +129,8 @@ fn generate_lexer_and_parser<L, LR, LL, F>(
     if generate_lexer {
         let alphabet = lapex_lexer::generate_alphabet(rules.tokens());
         let (nfa_entrypoint, nfa) = lapex_lexer::generate_nfa(&alphabet, rules.tokens());
-        let dfa = nfa.powerset_construction(nfa_entrypoint);
+        let dfa = lapex_lexer::apply_precedence_to_dfa(nfa.powerset_construction(nfa_entrypoint))
+            .unwrap();
 
         lexer_codegen.generate_lexer(rules.tokens(), &alphabet.get_ranges(), &dfa, &mut gen);
     }

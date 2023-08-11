@@ -43,7 +43,7 @@ impl<'grammar> TokensCodeWriter<'grammar> {
 
 struct LexerCodeWriter<'grammar> {
     alphabet: &'grammar [RangeInclusive<u32>],
-    dfa: &'grammar Dfa<Vec<String>, usize>,
+    dfa: &'grammar Dfa<Vec<&'grammar TokenRule<'grammar>>, usize>,
 }
 
 impl<'grammar> LexerCodeWriter<'grammar> {
@@ -78,8 +78,8 @@ impl<'grammar> LexerCodeWriter<'grammar> {
                 }
             }
             if let AutomatonState::Accepting(accepts) = node {
-                assert!(accepts.len() == 1);
-                let name: TokenStream = get_token_enum_name(accepts[0].as_str()).parse().unwrap();
+                assert_eq!(accepts.len(), 1);
+                let name: TokenStream = get_token_enum_name(accepts[0].token()).parse().unwrap();
                 automaton_cases.push(quote! {
                     (#state_id, _) => {
                         return TokenType::#name;
@@ -157,7 +157,7 @@ impl LexerCodeGen for RustLexerCodeGen {
         &self,
         _rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
-        dfa: &Dfa<Vec<String>, usize>,
+        dfa: &Dfa<Vec<&TokenRule>, usize>,
         gen: &mut GeneratedCodeWriter,
     ) {
         let writer = LexerCodeWriter { alphabet, dfa };
