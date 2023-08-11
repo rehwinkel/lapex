@@ -1,0 +1,9 @@
+[package]
+name = "lapex-input-gen"
+version = "0.1.0"
+edition = "2021"
+
+[build-dependencies]
+lapex = { path = "../lapex" }
+
+[dependencies]

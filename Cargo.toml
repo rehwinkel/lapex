@@ -7,7 +7,8 @@ members = [
     "lapex-parser",
     "lapex-codegen",
     "lapex-cpp-codegen",
-    "lapex-rust-codegen"
+    "lapex-rust-codegen",
+    "lapex-input-gen"
 ]
 exclude = [
     "generated/test_parser"

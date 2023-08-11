@@ -239,6 +239,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "lapex-input-gen"
+version = "0.1.0"
+dependencies = [
+ "lapex",
+]
+
+[[package]]
 name = "lapex-lexer"
 version = "0.1.0"
 dependencies = [
