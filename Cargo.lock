@@ -213,6 +213,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lapex-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "lapex",
+ "lapex-input-gen",
+]
+
+[[package]]
 name = "lapex-codegen"
 version = "0.1.0"
 dependencies = [
@@ -234,7 +243,12 @@ dependencies = [
 [[package]]
 name = "lapex-input"
 version = "0.1.0"
+
+[[package]]
+name = "lapex-input-bootstrap"
+version = "0.1.0"
 dependencies = [
+ "lapex-input",
  "nom",
 ]
 
@@ -243,6 +257,8 @@ name = "lapex-input-gen"
 version = "0.1.0"
 dependencies = [
  "lapex",
+ "lapex-input",
+ "lapex-input-bootstrap",
 ]
 
 [[package]]

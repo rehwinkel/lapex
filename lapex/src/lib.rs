@@ -3,6 +3,7 @@ use std::{fmt::Display, io::BufWriter, path::Path};
 use clap::ValueEnum;
 use lapex_codegen::GeneratedCodeWriter;
 use lapex_cpp_codegen::{CppLLParserCodeGen, CppLRParserCodeGen, CppLexerCodeGen};
+use lapex_input::LapexInputParser;
 use lapex_lexer::LexerCodeGen;
 use lapex_parser::{grammar::Grammar, ll_parser::LLParserCodeGen, lr_parser::LRParserCodeGen};
 use lapex_rust_codegen::{RustLLParserCodeGen, RustLRParserCodeGen, RustLexerCodeGen};
@@ -76,25 +77,27 @@ impl LanguageFactory<RustLexerCodeGen, RustLRParserCodeGen, RustLLParserCodeGen>
     }
 }
 
-fn generate_lexer_and_parser<L, LR, LL, F>(
+fn generate_lexer_and_parser<L, LR, LL, F, I>(
     generate_lexer: bool,
     algorithm: ParsingAlgorithm,
     generate_table: bool,
     grammar_path: &Path,
     target_path: &Path,
     language: F,
+    input_parser: I,
 ) where
     L: LexerCodeGen,
     LR: LRParserCodeGen,
     LL: LLParserCodeGen,
     F: LanguageFactory<L, LR, LL>,
+    I: LapexInputParser,
 {
     let lexer_codegen = language.lexer();
     let ll_codegen = language.ll_parser();
     let lr_codegen = language.lr_parser();
 
-    let file_contents = std::fs::read(grammar_path).unwrap();
-    let rules = lapex_input::parse_lapex_file(&file_contents).unwrap();
+    let file_contents = std::fs::read_to_string(grammar_path).unwrap();
+    let rules = input_parser.parse_lapex(file_contents.as_str()).unwrap();
     let mut gen = GeneratedCodeWriter::with_default(|name| {
         let file = std::fs::File::create(target_path.join(name)).unwrap();
         BufWriter::new(file)
@@ -139,14 +142,17 @@ fn generate_lexer_and_parser<L, LR, LL, F>(
     };
 }
 
-pub fn generate(
+pub fn generate<I>(
     generate_lexer: bool,
     algorithm: ParsingAlgorithm,
     generate_table: bool,
     grammar_path: &Path,
     target_path: &Path,
     language: Language,
-) {
+    input_parser: I,
+) where
+    I: LapexInputParser,
+{
     match language {
         Language::Cpp => generate_lexer_and_parser(
             generate_lexer,
@@ -155,6 +161,7 @@ pub fn generate(
             grammar_path,
             target_path,
             CppLanguageFactory {},
+            input_parser,
         ),
         Language::Rust => generate_lexer_and_parser(
             generate_lexer,
@@ -163,6 +170,7 @@ pub fn generate(
             grammar_path,
             target_path,
             RustLanguageFactory {},
+            input_parser,
         ),
     }
 }

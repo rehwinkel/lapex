@@ -1,3 +1,4 @@
+use lapex_input::{EntryRule, LapexInputParser, RuleSet};
 use parser::{Parser, ParserError};
 use tokens::TokenType;
 
@@ -121,17 +122,28 @@ impl parser::Visitor<TokenData> for LapexAstVisitor {
     }
 }
 
-pub fn parse_lapex_file<'src>(source: &'src str) -> Result<(), ParserError> {
-    let mut lexer = lexer::Lexer::new(source);
-    let visitor = LapexAstVisitor {};
-    let token_fun = || {
-        let mut next_tk = lexer.next();
-        while let TokenType::TkWhitespace = next_tk {
-            next_tk = lexer.next();
-        }
-        return (next_tk, TokenData {});
-    };
-    let mut parser = Parser::new(token_fun, visitor);
-    parser.parse()?;
-    Ok(())
+pub struct GeneratedLapexInputParser;
+
+impl LapexInputParser for GeneratedLapexInputParser {
+    fn parse_lapex<'src>(
+        &self,
+        source: &'src str,
+    ) -> Result<lapex_input::RuleSet<'src>, lapex_input::LapexParsingError> {
+        let mut lexer = lexer::Lexer::new(source);
+        let visitor = LapexAstVisitor {};
+        let token_fun = || {
+            let mut next_tk = lexer.next();
+            while let TokenType::TkWhitespace = next_tk {
+                next_tk = lexer.next();
+            }
+            return (next_tk, TokenData {});
+        };
+        let mut parser = Parser::new(token_fun, visitor);
+        parser.parse().unwrap(); // TODO
+        Ok(RuleSet {
+            entry_rule: EntryRule { name: "test" },
+            token_rules: Vec::new(),
+            production_rules: Vec::new(),
+        })
+    }
 }

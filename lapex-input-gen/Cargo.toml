@@ -5,5 +5,7 @@ edition = "2021"
 
 [build-dependencies]
 lapex = { path = "../lapex" }
+lapex-input-bootstrap = { path = "../lapex-input-bootstrap" }
 
 [dependencies]
+lapex-input = { path = "../lapex-input" }

@@ -14,5 +14,6 @@ fn main() {
         Path::new("src/lapex.lapex"),
         &dest_path,
         Language::Rust,
+        lapex_input_bootstrap::BootstrapLapexInputParser {},
     )
 }

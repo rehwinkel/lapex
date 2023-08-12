@@ -3,14 +3,6 @@ name = "lapex"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-name = "lapex"
-path = "src/lib.rs"
-
-[[bin]]
-name = "lapex"
-path = "src/main.rs"
-
 [dependencies]
 clap = { version = "4.3.16", features = ["derive"] }
 lapex-automaton = { path = "../lapex-automaton" }

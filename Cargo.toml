@@ -1,14 +1,16 @@
 [workspace]
 members = [
     "lapex",
+    "lapex-cli",
     "lapex-input",
+    "lapex-input-bootstrap",
+    "lapex-input-gen",
     "lapex-automaton",
     "lapex-lexer",
     "lapex-parser",
     "lapex-codegen",
     "lapex-cpp-codegen",
     "lapex-rust-codegen",
-    "lapex-input-gen"
 ]
 exclude = [
     "generated/test_parser"

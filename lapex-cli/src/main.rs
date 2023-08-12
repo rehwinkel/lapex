@@ -33,5 +33,6 @@ fn main() {
         Path::new(&cli.grammar),
         Path::new(&cli.target),
         cli.language,
+        lapex_input_gen::GeneratedLapexInputParser {},
     );
 }
