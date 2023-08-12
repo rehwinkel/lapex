@@ -1,4 +1,8 @@
-use lapex_input::{EntryRule, LapexInputParser, RuleSet};
+use std::f32::consts::E;
+
+use lapex_input::{
+    EntryRule, LapexInputParser, ProductionPattern, ProductionRule, Rule, RuleSet, TokenRule,
+};
 use parser::{Parser, ParserError};
 use tokens::TokenType;
 
@@ -12,113 +16,256 @@ mod tokens {
     include!(concat!(env!("OUT_DIR"), "/generated_lapex/tokens.rs"));
 }
 
-struct TokenData {}
+#[derive(Debug)]
+struct TokenData<'src> {
+    text: &'src str,
+}
 
-struct LapexAstVisitor {}
+#[derive(Debug)]
+enum Ast<'src> {
+    Token(&'src str),
+    Rule(Rule<'src>),
+    Pattern(ProductionPattern<'src>),
+    Rules(Vec<Rule<'src>>),
+}
 
-impl parser::Visitor<TokenData> for LapexAstVisitor {
-    fn shift(&mut self, token: TokenType, data: TokenData) {
-        todo!()
+struct LapexAstVisitor<'stack, 'src> {
+    stack: &'stack mut Vec<Ast<'src>>,
+}
+
+fn get_unescaped_chars(text: &str) -> Vec<char> {
+    // TODO: remove quotes and escaping
+    let mut chars: Vec<char> = text.chars().skip(1).collect();
+    chars.pop();
+    chars
+}
+
+impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 'src> {
+    fn shift(&mut self, _token: TokenType, data: TokenData<'src>) {
+        self.stack.push(Ast::Token(data.text));
     }
 
-    #[doc = "unary(7) -> option(8)"]
     fn reduce_unary_1(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "unary(7) -> repetition_one(9)"]
     fn reduce_unary_2(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "unary(7) -> repetition_zero(10)"]
     fn reduce_unary_3(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "unary(7) -> item(11)"]
     fn reduce_unary_4(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "prod_rule(2) -> KW_PROD(2) IDENT(11) EQUALS(3) pattern(4)"]
     fn reduce_prod_rule(&mut self) {
-        todo!()
+        self.stack.pop();
+        let rhs = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
+            pattern
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.pop();
+        let name = if let Some(Ast::Token(name)) = self.stack.pop() {
+            name
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.pop();
+        self.stack
+            .push(Ast::Rule(Rule::ProductionRule(ProductionRule {
+                name,
+                pattern: rhs,
+            })));
     }
 
-    #[doc = "repetition_zero(10) -> item(11) ASTERISK(8)"]
     fn reduce_repetition_zero(&mut self) {
-        todo!()
+        self.stack.pop();
+        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
+            pattern
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.push(Ast::Pattern(ProductionPattern::ZeroOrMany {
+            inner: Box::new(pattern),
+        }))
     }
 
-    #[doc = "item(11) -> IDENT(11)"]
     fn reduce_item_1(&mut self) {
-        todo!()
+        let name = if let Some(Ast::Token(name)) = self.stack.pop() {
+            name
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack
+            .push(Ast::Pattern(ProductionPattern::Rule { rule_name: name }))
     }
 
-    #[doc = "item(11) -> LPAR(5) pattern(4) RPAR(6)"]
     fn reduce_item_2(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "concatenation(6) -> unary(7) concatenation(6)"]
     fn reduce_concatenation_1(&mut self) {
-        todo!()
+        let mut elements = match self.stack.pop() {
+            Some(Ast::Pattern(ProductionPattern::Sequence { elements })) => elements,
+            Some(Ast::Pattern(pattern)) => vec![pattern],
+            _ => panic!("Stack is broken"),
+        };
+        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
+            pattern
+        } else {
+            panic!("Stack is broken")
+        };
+        elements.insert(0, pattern);
+        self.stack
+            .push(Ast::Pattern(ProductionPattern::Sequence { elements }))
     }
 
-    #[doc = "concatenation(6) -> unary(7)"]
     fn reduce_concatenation_2(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "pattern(4) -> alternative(5)"]
     fn reduce_pattern(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "token_rule(3) -> KW_TOKEN(0) IDENT(11) EQUALS(3) STRING(12)"]
     fn reduce_token_rule(&mut self) {
-        todo!()
+        self.stack.pop();
+        let rhs = if let Some(Ast::Token(rhs)) = self.stack.pop() {
+            rhs
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.pop();
+        let name = if let Some(Ast::Token(name)) = self.stack.pop() {
+            name
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.pop();
+        match rhs.chars().next() {
+            Some('"') => {
+                self.stack.push(Ast::Rule(Rule::TokenRule(TokenRule {
+                    name,
+                    pattern: lapex_input::TokenPattern::Literal {
+                        characters: get_unescaped_chars(rhs),
+                    },
+                })));
+            }
+            Some('/') => {
+                self.stack.push(Ast::Rule(Rule::TokenRule(TokenRule {
+                    name,
+                    pattern: lapex_input::TokenPattern::Literal {
+                        characters: Vec::new(), // TODO
+                    },
+                })));
+            }
+            _ => unreachable!(),
+        }
     }
 
-    #[doc = "option(8) -> item(11) QUESTION(7)"]
     fn reduce_option(&mut self) {
-        todo!()
+        self.stack.pop();
+        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
+            pattern
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.push(Ast::Pattern(ProductionPattern::Optional {
+            inner: Box::new(pattern),
+        }))
     }
 
-    #[doc = "entry_rule(1) -> KW_ENTRY(1) IDENT(11)"]
     fn reduce_entry_rule(&mut self) {
-        todo!()
+        self.stack.pop();
+        let name = if let Some(Ast::Token(name)) = self.stack.pop() {
+            name
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.pop();
+        self.stack
+            .push(Ast::Rule(Rule::EntryRule(EntryRule { name })));
     }
 
-    #[doc = "repetition_one(9) -> item(11) PLUS(9)"]
     fn reduce_repetition_one(&mut self) {
-        todo!()
+        self.stack.pop();
+        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
+            pattern
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.push(Ast::Pattern(ProductionPattern::OneOrMany {
+            inner: Box::new(pattern),
+        }))
     }
 
-    #[doc = "alternative(5) -> concatenation(6) PIPE(10) concatenation(6)"]
     fn reduce_alternative_1(&mut self) {
-        todo!()
+        let mut elements = match self.stack.pop() {
+            Some(Ast::Pattern(ProductionPattern::Alternative { elements })) => elements,
+            Some(Ast::Pattern(pattern)) => vec![pattern],
+            _ => panic!("Stack is broken"),
+        };
+        self.stack.pop();
+        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
+            pattern
+        } else {
+            panic!("Stack is broken")
+        };
+        elements.push(pattern);
+        self.stack
+            .push(Ast::Pattern(ProductionPattern::Alternative { elements }))
     }
 
-    #[doc = "alternative(5) -> concatenation(6)"]
     fn reduce_alternative_2(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "rule(0) -> entry_rule(1)"]
     fn reduce_rule_1(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "rule(0) -> prod_rule(2)"]
     fn reduce_rule_2(&mut self) {
-        todo!()
+        // NOOP
     }
 
-    #[doc = "rule(0) -> token_rule(3)"]
     fn reduce_rule_3(&mut self) {
-        todo!()
+        // NOOP
+    }
+
+    fn reduce_rules_1(&mut self) {
+        let rule = if let Some(Ast::Rule(rule)) = self.stack.pop() {
+            rule
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.push(Ast::Rules(vec![rule]))
+    }
+
+    fn reduce_rules_2(&mut self) {
+        let mut rules = if let Some(Ast::Rules(rules)) = self.stack.pop() {
+            rules
+        } else {
+            panic!("Stack is broken")
+        };
+        let rule = if let Some(Ast::Rule(rule)) = self.stack.pop() {
+            rule
+        } else {
+            panic!("Stack is broken")
+        };
+        rules.push(rule);
+        self.stack.push(Ast::Rules(rules))
+    }
+
+    fn reduce_string_or_regex_1(&mut self) {
+        // NOOP
+    }
+
+    fn reduce_string_or_regex_2(&mut self) {
+        // NOOP
     }
 }
 
@@ -130,20 +277,46 @@ impl LapexInputParser for GeneratedLapexInputParser {
         source: &'src str,
     ) -> Result<lapex_input::RuleSet<'src>, lapex_input::LapexParsingError> {
         let mut lexer = lexer::Lexer::new(source);
-        let visitor = LapexAstVisitor {};
+        let mut stack = Vec::new();
+        let visitor = LapexAstVisitor { stack: &mut stack };
         let token_fun = || {
-            let mut next_tk = lexer.next();
+            let mut next_tk = lexer.next().unwrap();
             while let TokenType::TkWhitespace = next_tk {
-                next_tk = lexer.next();
+                next_tk = lexer.next().unwrap();
             }
-            return (next_tk, TokenData {});
+            return (
+                next_tk,
+                TokenData {
+                    text: lexer.slice(),
+                },
+            );
         };
         let mut parser = Parser::new(token_fun, visitor);
-        parser.parse().unwrap(); // TODO
+        parser.parse().expect("error: parsing");
+        assert_eq!(stack.len(), 1);
+        let rules = if let Ast::Rules(rules) = stack.pop().unwrap() {
+            rules
+        } else {
+            panic!("Stack is broken")
+        };
+        let mut token_rules = Vec::new();
+        let mut prod_rules = Vec::new();
+        let mut entry_rules = Vec::new();
+
+        for rule in rules {
+            match rule {
+                Rule::TokenRule(token_rule) => token_rules.push(token_rule),
+                Rule::ProductionRule(prod_rule) => prod_rules.push(prod_rule),
+                Rule::EntryRule(entry_rule) => entry_rules.push(entry_rule),
+            }
+        }
+
+        assert_eq!(entry_rules.len(), 1);
+        let entry_rule = entry_rules.pop().unwrap();
         Ok(RuleSet {
-            entry_rule: EntryRule { name: "test" },
-            token_rules: Vec::new(),
-            production_rules: Vec::new(),
+            entry_rule: entry_rule,
+            token_rules,
+            production_rules: prod_rules,
         })
     }
 }

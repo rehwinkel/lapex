@@ -77,7 +77,7 @@ impl<'src> TokenRule<'src> {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct ProductionRule<'src> {
     pub name: &'src str,
-    pub pattern: ProductionPattern,
+    pub pattern: ProductionPattern<'src>,
 }
 
 impl<'src> ProductionRule<'src> {
@@ -106,21 +106,35 @@ impl<'src> EntryRule<'src> {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub enum ProductionPattern {
-    Sequence { elements: Vec<ProductionPattern> },
-    Alternative { elements: Vec<ProductionPattern> },
-    OneOrMany { inner: Box<ProductionPattern> },
-    ZeroOrMany { inner: Box<ProductionPattern> },
-    Optional { inner: Box<ProductionPattern> },
-    Rule { rule_name: String },
+pub enum ProductionPattern<'src> {
+    Sequence {
+        elements: Vec<ProductionPattern<'src>>,
+    },
+    Alternative {
+        elements: Vec<ProductionPattern<'src>>,
+    },
+    OneOrMany {
+        inner: Box<ProductionPattern<'src>>,
+    },
+    ZeroOrMany {
+        inner: Box<ProductionPattern<'src>>,
+    },
+    Optional {
+        inner: Box<ProductionPattern<'src>>,
+    },
+    Rule {
+        rule_name: &'src str,
+    },
 }
 
+#[derive(Debug)]
 pub enum Rule<'src> {
     TokenRule(TokenRule<'src>),
     ProductionRule(ProductionRule<'src>),
     EntryRule(EntryRule<'src>),
 }
 
+#[derive(Debug)]
 pub struct RuleSet<'src> {
     pub entry_rule: EntryRule<'src>,
     pub token_rules: Vec<TokenRule<'src>>,

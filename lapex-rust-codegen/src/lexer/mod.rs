@@ -33,7 +33,6 @@ impl<'grammar> TokensCodeWriter<'grammar> {
             #[derive(Clone, Copy, Debug)]
             pub enum TokenType {
                 EndOfFile,
-                Error,
                 #other_tokens
             }
         };
@@ -49,9 +48,11 @@ struct LexerCodeWriter<'grammar> {
 impl<'grammar> LexerCodeWriter<'grammar> {
     fn write_lexer(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         let mut alphabet_cases: Vec<TokenStream> = Vec::new();
+        let mut alphabet_reverse_cases: Vec<TokenStream> = Vec::new();
         for (i, entry) in self.alphabet.iter().enumerate() {
             let start = entry.start();
             let end = entry.end();
+            alphabet_reverse_cases.push(quote! { #i => Some(#start..=#end) });
             if start == end {
                 alphabet_cases.push(quote! { #start => Some(#i) });
             } else {
@@ -63,7 +64,8 @@ impl<'grammar> LexerCodeWriter<'grammar> {
         for (index, node) in self.dfa.states() {
             let state_id = index.index();
             if state_id == 0 {
-                automaton_cases.push(quote! { (#state_id, 0) => { return TokenType::EndOfFile; } });
+                automaton_cases
+                    .push(quote! { (#state_id, 0) => { return Ok(TokenType::EndOfFile); } });
             }
             for (transition, target) in self.dfa.transitions_from(index) {
                 if *transition != 0 {
@@ -82,13 +84,15 @@ impl<'grammar> LexerCodeWriter<'grammar> {
                 let name: TokenStream = get_token_enum_name(accepts[0].token()).parse().unwrap();
                 automaton_cases.push(quote! {
                     (#state_id, _) => {
-                        return TokenType::#name;
+                        return Ok(TokenType::#name);
                     }
                 });
             } else {
                 automaton_cases.push(quote! {
-                    (#state_id, _) => {
-                        return TokenType::Error;
+                    (#state_id, transition) => {
+                        return Err(LexerError::UnexpectedAlphabet {
+                            range: Lexer::get_alphabet_range(transition).unwrap()
+                        });
                     }
                 });
             }
@@ -96,6 +100,35 @@ impl<'grammar> LexerCodeWriter<'grammar> {
 
         let tokens = quote! {
             use super::tokens::TokenType;
+
+            #[derive(Debug)]
+            pub enum LexerError {
+                InvalidChar {
+                    bad_ch: u32
+                },
+                UnexpectedAlphabet {
+                    range: std::ops::RangeInclusive<u32>
+                }
+            }
+
+            impl std::error::Error for LexerError {}
+            impl std::fmt::Display for LexerError {
+                fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    match self {
+                        LexerError::InvalidChar { bad_ch } => write!(
+                            f,
+                            "Lexer got strange codepoint {}, char value is '{:?}'",
+                            bad_ch,
+                            std::char::from_u32(*bad_ch)
+                        ),
+                        LexerError::UnexpectedAlphabet { range } => write!(
+                            f,
+                            "Lexer got char in unexpected range: {:?}",
+                            range
+                        )
+                    }
+                }
+            }
 
             pub struct Lexer<'src> {
                 src: &'src str,
@@ -122,7 +155,14 @@ impl<'grammar> LexerCodeWriter<'grammar> {
                     }
                 }
 
-                pub fn next(&mut self) -> TokenType {
+                fn get_alphabet_range(c: usize) -> Option<std::ops::RangeInclusive<u32>> {
+                    match c {
+                        #( #alphabet_reverse_cases, )*
+                        _ => None
+                    }
+                }
+
+                pub fn next(&mut self) -> Result<TokenType, LexerError> {
                     let mut state: usize = 0;
                     self.start = self.position;
                     loop {
@@ -130,7 +170,9 @@ impl<'grammar> LexerCodeWriter<'grammar> {
                         let symbol = if let Some(symbol) = Lexer::get_alphabet_index(next_ch) {
                             symbol
                         } else {
-                            return TokenType::Error;
+                            return Err(LexerError::InvalidChar {
+                                bad_ch: next_ch
+                            });
                         };
                         match (state, symbol) {
                             #( #automaton_cases, )*

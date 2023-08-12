@@ -1,4 +1,3 @@
-use std::fmt::{Display, Formatter};
 use std::ops::Range;
 
 use lapex_input::{
@@ -43,6 +42,8 @@ fn parse_char_escaped(input: &[u8]) -> IResult<&[u8], char> {
         'n' => '\n',
         'r' => '\r',
         't' => '\t',
+        '\\' => '\\',
+        '/' => '/',
         'u' => {
             let (input, _) = tag("{")(input)?;
             let (input, code) = take_while_m_n(4, 6, |ch: u8| {
@@ -195,7 +196,7 @@ fn parse_rule_name(input: &[u8]) -> IResult<&[u8], ProductionPattern> {
     Ok((
         input,
         ProductionPattern::Rule {
-            rule_name: String::from_utf8(name.to_vec()).unwrap(),
+            rule_name: std::str::from_utf8(name).unwrap(),
         },
     ))
 }
@@ -303,7 +304,8 @@ pub struct BootstrapLapexInputParser;
 
 impl LapexInputParser for BootstrapLapexInputParser {
     fn parse_lapex<'src>(&self, source: &'src str) -> Result<RuleSet<'src>, LapexParsingError> {
-        parse_lapex_file(source.as_bytes())
+        let rule_set = parse_lapex_file(source.as_bytes())?;
+        Ok(rule_set)
     }
 }
 
