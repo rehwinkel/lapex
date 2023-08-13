@@ -259,6 +259,7 @@ dependencies = [
  "lapex",
  "lapex-input",
  "lapex-input-bootstrap",
+ "regex-syntax",
 ]
 
 [[package]]

@@ -15,7 +15,8 @@ use petgraph::{
 
 pub type StateId = NodeIndex;
 
-pub enum AutomatonState<StateType> {
+#[derive(Debug)]
+pub enum AutomatonState<StateType: Debug> {
     Accepting(StateType),
     Intermediate(usize),
 }
@@ -43,12 +44,13 @@ impl<TransitionType: Display> Display for NfaEdge<TransitionType> {
     }
 }
 
-pub struct Nfa<StateType, TransitionType> {
+#[derive(Debug)]
+pub struct Nfa<StateType: Debug, TransitionType: Debug> {
     graph: Graph<AutomatonState<StateType>, NfaEdge<TransitionType>>,
     intermediate_counter: usize,
 }
 
-impl<StateType, TransitionType> Nfa<StateType, TransitionType> {
+impl<StateType: Debug, TransitionType: Debug> Nfa<StateType, TransitionType> {
     pub fn new() -> Self {
         Nfa {
             graph: DiGraph::new(),
@@ -84,12 +86,12 @@ impl<StateType, TransitionType> Nfa<StateType, TransitionType> {
     }
 }
 
-pub struct Dfa<StateType, TransitionType> {
+pub struct Dfa<StateType: Debug, TransitionType: Debug> {
     graph: Graph<AutomatonState<StateType>, TransitionType>,
     intermediate_counter: usize,
 }
 
-impl<StateType, TransitionType> Dfa<StateType, TransitionType> {
+impl<StateType: Debug, TransitionType: Debug> Dfa<StateType, TransitionType> {
     pub fn new() -> Self {
         Dfa {
             graph: DiGraph::new(),
@@ -133,7 +135,9 @@ impl<StateType, TransitionType> Dfa<StateType, TransitionType> {
     }
 }
 
-impl<StateType: Clone, TransitionType: Clone + Eq + Hash> Nfa<StateType, TransitionType> {
+impl<StateType: Clone + Debug, TransitionType: Debug + Clone + Eq + Hash>
+    Nfa<StateType, TransitionType>
+{
     fn epsilon_closure(&self, start_nodes: Vec<StateId>, closure: &mut HashSet<StateId>) {
         for start_node in start_nodes {
             closure.insert(start_node);

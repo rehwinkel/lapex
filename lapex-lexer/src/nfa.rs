@@ -1,10 +1,55 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, iter::Peekable};
 
 use lapex_automaton::{Nfa, StateId};
 
 use lapex_input::{Characters, Pattern, TokenPattern, TokenRule};
 
 use crate::alphabet::Alphabet;
+
+fn chain_pattern_iterator<'rules, 'p, I>(
+    alphabet: &Alphabet,
+    nfa: &mut Nfa<&'rules TokenRule<'rules>, usize>,
+    mut patterns: Peekable<I>,
+    start: StateId,
+    end: StateId,
+) -> Vec<StateId>
+where
+    I: Iterator<Item = &'p Pattern>,
+{
+    if patterns.peek().is_none() {
+        panic!("iterator is empty");
+    }
+    let mut intermediates = Vec::new();
+    let mut inner_start = start;
+    while let Some(p) = patterns.next() {
+        if !patterns.peek().is_none() {
+            let inner_end = nfa.add_intermediate_state();
+            intermediates.push(inner_end);
+            build_nfa_from_pattern(inner_start, inner_end, alphabet, nfa, p);
+            inner_start = inner_end;
+        } else {
+            build_nfa_from_pattern(inner_start, end, alphabet, nfa, p);
+        }
+    }
+    intermediates
+}
+
+fn chain_pattern_times<'rules, 'p>(
+    alphabet: &Alphabet,
+    nfa: &mut Nfa<&'rules TokenRule<'rules>, usize>,
+    times: usize,
+    pattern: &Pattern,
+    start: StateId,
+    end: StateId,
+) -> Vec<StateId> {
+    chain_pattern_iterator(
+        alphabet,
+        nfa,
+        (0..times).into_iter().map(|_i| pattern).peekable(),
+        start,
+        end,
+    )
+}
 
 fn build_nfa_from_pattern<'rules>(
     start: StateId,
@@ -16,13 +61,7 @@ fn build_nfa_from_pattern<'rules>(
     match &pattern {
         Pattern::Sequence { elements } => {
             if !elements.is_empty() {
-                let mut start = start;
-                for pat in &elements[..elements.len() - 1] {
-                    let end = nfa.add_intermediate_state();
-                    build_nfa_from_pattern(start, end, alphabet, nfa, pat);
-                    start = end;
-                }
-                build_nfa_from_pattern(start, end, alphabet, nfa, elements.last().unwrap());
+                chain_pattern_iterator(alphabet, nfa, elements.into_iter().peekable(), start, end);
             }
         }
         Pattern::Alternative { elements } => {
@@ -34,30 +73,52 @@ fn build_nfa_from_pattern<'rules>(
                 nfa.add_epsilon_transition(inner_end, end);
             }
         }
-        Pattern::Optional { inner } => {
+        Pattern::Repetition { min, max, inner } => {
             let inner_start = nfa.add_intermediate_state();
             let inner_end = nfa.add_intermediate_state();
-            build_nfa_from_pattern(inner_start, inner_end, alphabet, nfa, inner);
-            nfa.add_epsilon_transition(start, end);
             nfa.add_epsilon_transition(start, inner_start);
-            nfa.add_epsilon_transition(inner_end, end);
-        }
-        Pattern::OneOrMany { inner } => {
-            let inner_start = nfa.add_intermediate_state();
-            let inner_end = nfa.add_intermediate_state();
-            build_nfa_from_pattern(inner_start, inner_end, alphabet, nfa, inner);
-            nfa.add_epsilon_transition(start, inner_start);
-            nfa.add_epsilon_transition(inner_end, end);
-            nfa.add_epsilon_transition(inner_end, inner_start);
-        }
-        Pattern::ZeroOrMany { inner } => {
-            let inner_start = nfa.add_intermediate_state();
-            let inner_end = nfa.add_intermediate_state();
-            build_nfa_from_pattern(inner_start, inner_end, alphabet, nfa, inner);
-            nfa.add_epsilon_transition(start, end);
-            nfa.add_epsilon_transition(start, inner_start);
-            nfa.add_epsilon_transition(inner_end, end);
-            nfa.add_epsilon_transition(inner_end, inner_start);
+
+            let previous: StateId;
+            if *min > 0 {
+                let mut intermediates = chain_pattern_times(
+                    alphabet,
+                    nfa,
+                    *min as usize,
+                    inner,
+                    inner_start,
+                    inner_end,
+                );
+                previous = intermediates.pop().unwrap_or(inner_start);
+            } else {
+                build_nfa_from_pattern(inner_start, inner_end, alphabet, nfa, inner);
+                nfa.add_epsilon_transition(start, end);
+                previous = inner_start;
+            }
+            match max {
+                None => {
+                    nfa.add_epsilon_transition(inner_end, previous);
+                    nfa.add_epsilon_transition(inner_end, end);
+                }
+                Some(max) => {
+                    let additional_until_max = max - min;
+                    let max_start = nfa.add_intermediate_state();
+                    nfa.add_epsilon_transition(inner_end, max_start);
+                    let max_end = nfa.add_intermediate_state();
+                    let mut max_intermediates = chain_pattern_times(
+                        alphabet,
+                        nfa,
+                        additional_until_max as usize,
+                        inner,
+                        max_start,
+                        max_end,
+                    );
+                    max_intermediates.push(max_start);
+                    max_intermediates.push(max_end);
+                    for mi in max_intermediates {
+                        nfa.add_epsilon_transition(mi, end);
+                    }
+                }
+            }
         }
         Pattern::CharSet {
             chars: chars_vec,

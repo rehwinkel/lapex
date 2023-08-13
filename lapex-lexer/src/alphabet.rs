@@ -45,9 +45,11 @@ fn get_chars_from_pattern(chars: &mut BTreeSet<char>, pattern: &Pattern) {
                 get_chars_from_pattern(chars, elem)
             }
         }
-        Pattern::Optional { inner } => get_chars_from_pattern(chars, inner),
-        Pattern::OneOrMany { inner } => get_chars_from_pattern(chars, inner),
-        Pattern::ZeroOrMany { inner } => get_chars_from_pattern(chars, inner),
+        Pattern::Repetition {
+            min: _,
+            max: _,
+            inner,
+        } => get_chars_from_pattern(chars, inner),
         Pattern::CharSet {
             chars: ch,
             negated: _,

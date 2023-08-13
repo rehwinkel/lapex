@@ -1,9 +1,11 @@
 use std::f32::consts::E;
 
 use lapex_input::{
-    EntryRule, LapexInputParser, ProductionPattern, ProductionRule, Rule, RuleSet, TokenRule,
+    EntryRule, LapexInputParser, Pattern, ProductionPattern, ProductionRule, Rule, RuleSet,
+    TokenPattern, TokenRule,
 };
 use parser::{Parser, ParserError};
+use regex_syntax::hir::{Hir, HirKind};
 use tokens::TokenType;
 
 mod parser {
@@ -38,6 +40,24 @@ fn get_unescaped_chars(text: &str) -> Vec<char> {
     let mut chars: Vec<char> = text.chars().skip(1).collect();
     chars.pop();
     chars
+}
+
+fn make_pattern_from_hir(hir: Hir) -> Pattern {
+    match hir.kind() {
+        HirKind::Empty => todo!(),
+        HirKind::Literal(_) => todo!(),
+        HirKind::Class(_) => todo!(),
+        HirKind::Look(_) => todo!(),
+        HirKind::Repetition(_) => todo!(),
+        HirKind::Capture(_) => todo!(),
+        HirKind::Concat(_) => todo!(),
+        HirKind::Alternation(_) => todo!(),
+    }
+}
+
+fn get_regex_pattern(text: &str) -> Result<Pattern, regex_syntax::Error> {
+    let regex_ast = regex_syntax::parse(text)?;
+    Ok(make_pattern_from_hir(regex_ast))
 }
 
 impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 'src> {
@@ -105,7 +125,14 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
     }
 
     fn reduce_item_2(&mut self) {
-        // NOOP
+        self.stack.pop();
+        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
+            pattern
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.pop();
+        self.stack.push(Ast::Pattern(pattern))
     }
 
     fn reduce_concatenation_1(&mut self) {
@@ -158,8 +185,10 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
             Some('/') => {
                 self.stack.push(Ast::Rule(Rule::TokenRule(TokenRule {
                     name,
-                    pattern: lapex_input::TokenPattern::Literal {
-                        characters: Vec::new(), // TODO
+                    pattern: TokenPattern::Pattern {
+                        pattern: Pattern::Char {
+                            chars: lapex_input::Characters::Single('('),
+                        }, //TODO: get_regex_pattern(rhs).unwrap(),
                     },
                 })));
             }
@@ -169,10 +198,9 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
 
     fn reduce_option(&mut self) {
         self.stack.pop();
-        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
-            pattern
-        } else {
-            panic!("Stack is broken")
+        let pattern = match self.stack.pop() {
+            Some(Ast::Pattern(pattern)) => pattern,
+            on_stack => panic!("Stack is broken: {:?}", on_stack),
         };
         self.stack.push(Ast::Pattern(ProductionPattern::Optional {
             inner: Box::new(pattern),

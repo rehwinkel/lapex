@@ -14,13 +14,9 @@ pub enum Pattern {
     Alternative {
         elements: Vec<Pattern>,
     },
-    OneOrMany {
-        inner: Box<Pattern>,
-    },
-    ZeroOrMany {
-        inner: Box<Pattern>,
-    },
-    Optional {
+    Repetition {
+        min: u32,
+        max: Option<u32>,
         inner: Box<Pattern>,
     },
     CharSet {

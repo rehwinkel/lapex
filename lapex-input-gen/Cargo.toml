@@ -9,3 +9,4 @@ lapex-input-bootstrap = { path = "../lapex-input-bootstrap" }
 
 [dependencies]
 lapex-input = { path = "../lapex-input" }
+regex-syntax = "0.7.4"

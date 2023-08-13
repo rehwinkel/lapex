@@ -128,13 +128,19 @@ fn parse_regex_repetition(input: &[u8]) -> IResult<&[u8], Pattern> {
     let (input, rep_kind) = parse_repetition_kind(input)?;
     let pattern = if let Some(rep) = rep_kind {
         match rep {
-            0 => Pattern::ZeroOrMany {
+            0 => Pattern::Repetition {
+                min: 0,
+                max: None,
                 inner: Box::new(inner),
             },
-            1 => Pattern::OneOrMany {
+            1 => Pattern::Repetition {
+                min: 1,
+                max: None,
                 inner: Box::new(inner),
             },
-            2 => Pattern::Optional {
+            2 => Pattern::Repetition {
+                min: 0,
+                max: Some(1),
                 inner: Box::new(inner),
             },
             _ => unreachable!(),
