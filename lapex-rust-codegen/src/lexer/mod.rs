@@ -6,19 +6,10 @@ use lapex_input::TokenRule;
 use lapex_lexer::LexerCodeGen;
 use quote::{__private::TokenStream, quote};
 
-use crate::RustLexerCodeGen;
+use crate::{get_token_enum_name, RustLexerCodeGen};
 
 struct TokensCodeWriter<'grammar> {
     rules: &'grammar [TokenRule<'grammar>],
-}
-
-fn get_token_enum_name(name: &str) -> String {
-    let (head, tail) = name.split_at(1);
-    format!(
-        "Tk{}{}",
-        head.to_ascii_uppercase(),
-        tail.to_ascii_lowercase()
-    )
 }
 
 impl<'grammar> TokensCodeWriter<'grammar> {

@@ -1,11 +1,11 @@
-use std::f32::consts::E;
+use std::{error::Error, fmt::Display, str::Utf8Error};
 
 use lapex_input::{
-    EntryRule, LapexInputParser, Pattern, ProductionPattern, ProductionRule, Rule, RuleSet,
-    TokenPattern, TokenRule,
+    Characters, EntryRule, LapexInputParser, Pattern, ProductionPattern, ProductionRule, Rule,
+    RuleSet, TokenPattern, TokenRule,
 };
-use parser::{Parser, ParserError};
-use regex_syntax::hir::{Hir, HirKind};
+use parser::Parser;
+use regex_syntax::hir::{Class, Hir, HirKind};
 use tokens::TokenType;
 
 mod parser {
@@ -42,22 +42,94 @@ fn get_unescaped_chars(text: &str) -> Vec<char> {
     chars
 }
 
-fn make_pattern_from_hir(hir: Hir) -> Pattern {
-    match hir.kind() {
-        HirKind::Empty => todo!(),
-        HirKind::Literal(_) => todo!(),
-        HirKind::Class(_) => todo!(),
-        HirKind::Look(_) => todo!(),
-        HirKind::Repetition(_) => todo!(),
-        HirKind::Capture(_) => todo!(),
-        HirKind::Concat(_) => todo!(),
-        HirKind::Alternation(_) => todo!(),
+#[derive(Debug)]
+enum RegexConversionError {
+    LazyRepetition,
+    Lookaround,
+    EmptyRegex,
+    RegexSyntax(regex_syntax::Error),
+    Utf8Conversion(std::str::Utf8Error),
+    ByteClass,
+}
+
+impl From<regex_syntax::Error> for RegexConversionError {
+    fn from(value: regex_syntax::Error) -> Self {
+        RegexConversionError::RegexSyntax(value)
     }
 }
 
-fn get_regex_pattern(text: &str) -> Result<Pattern, regex_syntax::Error> {
-    let regex_ast = regex_syntax::parse(text)?;
-    Ok(make_pattern_from_hir(regex_ast))
+impl From<Utf8Error> for RegexConversionError {
+    fn from(value: Utf8Error) -> Self {
+        RegexConversionError::Utf8Conversion(value)
+    }
+}
+
+impl Error for RegexConversionError {}
+
+impl Display for RegexConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self) // TODO
+    }
+}
+
+fn make_pattern_from_hir(hir: &Hir) -> Result<Pattern, RegexConversionError> {
+    Ok(match hir.kind() {
+        HirKind::Empty => {
+            return Err(RegexConversionError::EmptyRegex);
+        }
+        HirKind::Literal(lit) => {
+            let chars = std::str::from_utf8(lit.0.as_ref())?;
+            Pattern::Sequence {
+                elements: chars
+                    .chars()
+                    .map(|c| Pattern::Char {
+                        chars: lapex_input::Characters::Single(c),
+                    })
+                    .collect(),
+            }
+        }
+        HirKind::Class(class) => match class {
+            Class::Unicode(unicode) => Pattern::CharSet {
+                chars: unicode
+                    .iter()
+                    .map(|r| Characters::Range(r.start(), r.end()))
+                    .collect(),
+                negated: false,
+            },
+            Class::Bytes(_) => return Err(RegexConversionError::ByteClass),
+        },
+        HirKind::Look(_) => {
+            return Err(RegexConversionError::Lookaround);
+        }
+        HirKind::Repetition(rep) => {
+            if rep.greedy == false {
+                return Err(RegexConversionError::LazyRepetition);
+            }
+            Pattern::Repetition {
+                min: rep.min,
+                max: rep.max,
+                inner: Box::new(make_pattern_from_hir(rep.sub.as_ref())?),
+            }
+        }
+        HirKind::Capture(capture) => make_pattern_from_hir(capture.sub.as_ref())?,
+        HirKind::Concat(inner) => Pattern::Sequence {
+            elements: inner
+                .iter()
+                .map(|h| make_pattern_from_hir(h))
+                .collect::<Result<Vec<Pattern>, RegexConversionError>>()?,
+        },
+        HirKind::Alternation(opts) => Pattern::Alternative {
+            elements: opts
+                .iter()
+                .map(|h| make_pattern_from_hir(h))
+                .collect::<Result<Vec<Pattern>, RegexConversionError>>()?,
+        },
+    })
+}
+
+fn get_regex_pattern(text: &str) -> Result<Pattern, RegexConversionError> {
+    let regex_ast = regex_syntax::parse(&text[1..text.len() - 1])?;
+    Ok(make_pattern_from_hir(&regex_ast)?)
 }
 
 impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 'src> {
@@ -186,9 +258,7 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
                 self.stack.push(Ast::Rule(Rule::TokenRule(TokenRule {
                     name,
                     pattern: TokenPattern::Pattern {
-                        pattern: Pattern::Char {
-                            chars: lapex_input::Characters::Single('('),
-                        }, //TODO: get_regex_pattern(rhs).unwrap(),
+                        pattern: get_regex_pattern(rhs).unwrap(),
                     },
                 })));
             }

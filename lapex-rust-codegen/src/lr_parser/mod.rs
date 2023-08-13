@@ -7,7 +7,7 @@ use lapex_parser::{
 };
 use quote::{__private::TokenStream, quote};
 
-use crate::RustLRParserCodeGen;
+use crate::{get_non_terminal_enum_name, get_token_enum_name, RustLRParserCodeGen};
 
 struct CodeWriter<'grammar> {
     grammar: &'grammar Grammar<'grammar>,
@@ -38,32 +38,6 @@ impl<'grammar> CodeWriter<'grammar> {
             parser_table,
             rule_index_map,
             rules_by_non_terminal,
-        }
-    }
-}
-
-fn get_token_enum_name(name: &str) -> String {
-    let (head, tail) = name.split_at(1);
-    format!(
-        "Tk{}{}",
-        head.to_ascii_uppercase(),
-        tail.to_ascii_lowercase()
-    )
-}
-
-fn get_non_terminal_enum_name(grammar: &Grammar, non_terminal: Symbol) -> String {
-    if let Some(name) = grammar.is_named_non_terminal(non_terminal) {
-        let (head, tail) = name.split_at(1);
-        format!(
-            "Nt{}{}",
-            head.to_ascii_uppercase(),
-            tail.to_ascii_lowercase()
-        )
-    } else {
-        if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
-            format!("NtAnon{}", non_terminal_index)
-        } else {
-            unreachable!()
         }
     }
 }

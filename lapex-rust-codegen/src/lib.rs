@@ -1,3 +1,5 @@
+use lapex_parser::grammar::{Grammar, Symbol};
+
 pub struct RustLexerCodeGen {}
 
 impl RustLexerCodeGen {
@@ -38,6 +40,32 @@ impl Default for RustLRParserCodeGen {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn get_token_enum_name(name: &str) -> String {
+    format!("Tk{}", convert_snake_to_upper_camel(name))
+}
+
+fn get_non_terminal_enum_name(grammar: &Grammar, non_terminal: Symbol) -> String {
+    if let Some(name) = grammar.is_named_non_terminal(non_terminal) {
+        format!("Nt{}", convert_snake_to_upper_camel(name))
+    } else {
+        if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
+            format!("NtAnon{}", non_terminal_index)
+        } else {
+            unreachable!()
+        }
+    }
+}
+
+fn convert_snake_to_upper_camel(name: &str) -> String {
+    name.split('_')
+        .map(|s| {
+            let (head, tail) = s.split_at(1);
+            format!("{}{}", head.to_ascii_uppercase(), tail.to_ascii_lowercase())
+        })
+        .collect::<Vec<String>>()
+        .join("")
 }
 
 mod lexer;
