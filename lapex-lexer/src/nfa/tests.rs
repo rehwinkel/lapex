@@ -1,6 +1,4 @@
-use lapex_automaton::{AutomatonState, NfaEdge};
 use lapex_input::{Characters, Pattern, TokenPattern, TokenRule};
-use petgraph::{prelude::DiGraph, Graph};
 
 use crate::{generate_alphabet, generate_nfa};
 
