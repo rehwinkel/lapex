@@ -78,44 +78,52 @@ fn build_nfa_from_pattern<'rules>(
             let inner_end = nfa.add_intermediate_state();
             nfa.add_epsilon_transition(start, inner_start);
 
-            let previous: StateId;
-            if *min > 0 {
-                let mut intermediates = chain_pattern_times(
-                    alphabet,
-                    nfa,
-                    *min as usize,
-                    inner,
-                    inner_start,
-                    inner_end,
-                );
-                previous = intermediates.pop().unwrap_or(inner_start);
-            } else {
-                build_nfa_from_pattern(inner_start, inner_end, alphabet, nfa, inner);
-                nfa.add_epsilon_transition(start, end);
-                previous = inner_start;
-            }
-            match max {
-                None => {
-                    nfa.add_epsilon_transition(inner_end, previous);
+            match (min, max) {
+                (0, None) => {
+                    build_nfa_from_pattern(inner_start, inner_end, alphabet, nfa, inner);
+                    nfa.add_epsilon_transition(start, end);
+                    nfa.add_epsilon_transition(inner_end, inner_start);
                     nfa.add_epsilon_transition(inner_end, end);
                 }
-                Some(max) => {
-                    let additional_until_max = max - min;
-                    let max_start = nfa.add_intermediate_state();
-                    nfa.add_epsilon_transition(inner_end, max_start);
-                    let max_end = nfa.add_intermediate_state();
-                    let mut max_intermediates = chain_pattern_times(
-                        alphabet,
-                        nfa,
-                        additional_until_max as usize,
-                        inner,
-                        max_start,
-                        max_end,
-                    );
-                    max_intermediates.push(max_start);
-                    max_intermediates.push(max_end);
-                    for mi in max_intermediates {
-                        nfa.add_epsilon_transition(mi, end);
+                (n, max) => {
+                    let mut intermediates = if *n == 0 {
+                        nfa.add_epsilon_transition(inner_start, inner_end);
+                        Vec::new()
+                    } else {
+                        chain_pattern_times(
+                            alphabet,
+                            nfa,
+                            *n as usize,
+                            inner,
+                            inner_start,
+                            inner_end,
+                        )
+                    };
+                    match max {
+                        None => {
+                            let previous = intermediates.pop().unwrap_or(inner_start);
+                            nfa.add_epsilon_transition(inner_end, previous);
+                            nfa.add_epsilon_transition(inner_end, end);
+                        }
+                        Some(max) => {
+                            let additional_until_max = max - min;
+                            let max_start = nfa.add_intermediate_state();
+                            nfa.add_epsilon_transition(inner_end, max_start);
+                            let max_end = nfa.add_intermediate_state();
+                            let mut max_intermediates = chain_pattern_times(
+                                alphabet,
+                                nfa,
+                                additional_until_max as usize,
+                                inner,
+                                max_start,
+                                max_end,
+                            );
+                            max_intermediates.push(max_start);
+                            max_intermediates.push(max_end);
+                            for mi in max_intermediates {
+                                nfa.add_epsilon_transition(mi, end);
+                            }
+                        }
                     }
                 }
             }
@@ -195,3 +203,6 @@ pub fn generate_nfa<'rules>(
     }
     (start, nfa)
 }
+
+#[cfg(test)]
+mod tests;

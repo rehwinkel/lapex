@@ -7,3 +7,6 @@ edition = "2021"
 lapex-automaton = { path = "../lapex-automaton" }
 lapex-input = { path = "../lapex-input" }
 lapex-codegen = { path = "../lapex-codegen" }
+
+[dev-dependencies]
+petgraph = "0.6.2"

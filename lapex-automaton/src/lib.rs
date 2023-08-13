@@ -21,7 +21,7 @@ pub enum AutomatonState<StateType: Debug> {
     Intermediate(usize),
 }
 
-enum NfaEdge<TransitionType> {
+pub enum NfaEdge<TransitionType> {
     Epsilon,
     Transition(TransitionType),
 }
@@ -56,6 +56,10 @@ impl<StateType: Debug, TransitionType: Debug> Nfa<StateType, TransitionType> {
             graph: DiGraph::new(),
             intermediate_counter: 0,
         }
+    }
+
+    pub fn graph(&self) -> &Graph<AutomatonState<StateType>, NfaEdge<TransitionType>> {
+        &self.graph
     }
 
     pub fn add_intermediate_state(&mut self) -> StateId {

@@ -269,6 +269,7 @@ dependencies = [
  "lapex-automaton",
  "lapex-codegen",
  "lapex-input",
+ "petgraph",
 ]
 
 [[package]]
