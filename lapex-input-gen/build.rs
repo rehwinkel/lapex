@@ -15,7 +15,8 @@ fn main() {
         &dest_path,
         Language::Rust,
         lapex_input_bootstrap::BootstrapLapexInputParser {},
-    );
+    )
+    .unwrap();
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/lapex.lapex");
 }

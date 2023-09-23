@@ -11,24 +11,26 @@ use lapex_input::TokenRule;
 pub use nfa::generate_nfa;
 
 #[derive(Debug)]
-pub struct PrecedenceError<'rules> {
-    rules: Vec<&'rules TokenRule<'rules>>,
+pub struct PrecedenceError {
+    rules: Vec<String>,
+    precedence: usize,
 }
 
-impl<'rules> Error for PrecedenceError<'rules> {}
-impl<'rules> Display for PrecedenceError<'rules> {
+impl Error for PrecedenceError {}
+impl Display for PrecedenceError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Encountered a precedence conflict while scanning DFA. {}\n{:#?}",
-            "Following rules have same precedence:", self.rules
+            "Precedence conflict: Following Lexer rules have same precedence of {}: '{}'",
+            self.precedence,
+            self.rules.join("', '")
         )
     }
 }
 
 fn resolve_precedence<'rules>(
     rules: &Vec<&'rules TokenRule<'rules>>,
-) -> Result<&'rules TokenRule<'rules>, PrecedenceError<'rules>> {
+) -> Result<&'rules TokenRule<'rules>, PrecedenceError> {
     assert!(!rules.is_empty());
     let mut sorted_rules: Vec<(&TokenRule, usize)> =
         rules.iter().map(|r| (*r, r.precedence())).collect();
@@ -41,7 +43,11 @@ fn resolve_precedence<'rules>(
         .collect();
     if rules_with_matching_prec.len() > 1 {
         return Err(PrecedenceError {
-            rules: rules_with_matching_prec,
+            rules: rules_with_matching_prec
+                .iter()
+                .map(|r| r.name.to_string())
+                .collect(),
+            precedence: highest_precedence,
         });
     }
     Ok(rules_with_matching_prec[0])
@@ -49,14 +55,14 @@ fn resolve_precedence<'rules>(
 
 pub fn apply_precedence_to_dfa<'rules>(
     dfa: Dfa<Vec<&'rules TokenRule<'rules>>, usize>,
-) -> Result<Dfa<Vec<&'rules TokenRule<'rules>>, usize>, PrecedenceError> {
+) -> Result<Dfa<&'rules TokenRule<'rules>, usize>, PrecedenceError> {
     let mut resulting_dfa = Dfa::new();
     let mut state_mapping = HashMap::new();
     for (idx, state) in dfa.states() {
         match state {
             AutomatonState::Accepting(accepted) => {
                 let rule = resolve_precedence(accepted)?;
-                let new_idx = resulting_dfa.add_accepting_state(vec![rule]);
+                let new_idx = resulting_dfa.add_accepting_state(rule);
                 state_mapping.insert(idx, new_idx);
             }
             AutomatonState::Intermediate(_) => {

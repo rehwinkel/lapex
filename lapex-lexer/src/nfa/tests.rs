@@ -6,6 +6,7 @@ use crate::{generate_alphabet, generate_nfa};
 fn test_repetition_option() {
     let rules = [TokenRule {
         name: "test",
+        precedence: None,
         pattern: TokenPattern::Pattern {
             pattern: Pattern::Repetition {
                 min: 0,
@@ -26,6 +27,7 @@ fn test_repetition_option() {
 fn test_repetition_bounded() {
     let rules = [TokenRule {
         name: "test",
+        precedence: None,
         pattern: TokenPattern::Pattern {
             pattern: Pattern::Repetition {
                 min: 3,
@@ -46,6 +48,7 @@ fn test_repetition_bounded() {
 fn test_repetition_unbounded() {
     let rules = [TokenRule {
         name: "test",
+        precedence: None,
         pattern: TokenPattern::Pattern {
             pattern: Pattern::Repetition {
                 min: 0,
@@ -66,6 +69,7 @@ fn test_repetition_unbounded() {
 fn test_repetition_lower_bounded() {
     let rules = [TokenRule {
         name: "test",
+        precedence: None,
         pattern: TokenPattern::Pattern {
             pattern: Pattern::Repetition {
                 min: 3,

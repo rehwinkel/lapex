@@ -10,7 +10,7 @@ pub trait LexerCodeGen {
         &self,
         rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
-        dfa: &Dfa<Vec<&TokenRule>, usize>,
+        dfa: &Dfa<&TokenRule, usize>,
         gen: &mut GeneratedCodeWriter,
     );
 }

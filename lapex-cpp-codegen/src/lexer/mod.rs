@@ -13,13 +13,13 @@ struct LexerCodeWriter<'lexer> {
     lexer_header_template: Template<'static>,
     lexer_impl_template: Template<'static>,
     alphabet: &'lexer [RangeInclusive<u32>],
-    dfa: &'lexer Dfa<Vec<&'lexer TokenRule<'lexer>>, usize>,
+    dfa: &'lexer Dfa<&'lexer TokenRule<'lexer>, usize>,
 }
 
 impl<'lexer> LexerCodeWriter<'lexer> {
     pub fn new(
         alphabet: &'lexer [RangeInclusive<u32>],
-        dfa: &'lexer Dfa<Vec<&'lexer TokenRule<'lexer>>, usize>,
+        dfa: &'lexer Dfa<&'lexer TokenRule<'lexer>, usize>,
     ) -> Self {
         let lexer_header_template = Template::new(include_str!("lexer.h.tpl"));
         let lexer_impl_template = Template::new(include_str!("lexer.cpp.tpl"));
@@ -72,10 +72,10 @@ impl<'lexer> LexerCodeWriter<'lexer> {
                 }
             }
             writeln!(output, "default:")?;
-            if let AutomatonState::Accepting(accepts) = node {
-                writeln!(output, "// ACCEPT: {:?}", accepts)?;
+            if let AutomatonState::Accepting(accept) = node {
+                writeln!(output, "// ACCEPT: {:?}", accept)?;
                 writeln!(output, "this->end_pos = this->position;")?;
-                writeln!(output, "return TokenType::TK_{};", accepts[0].token())?;
+                writeln!(output, "return TokenType::TK_{};", accept.token())?;
             } else {
                 writeln!(output, "return TokenType::TK_ERR;")?;
             }
@@ -162,7 +162,7 @@ impl LexerCodeGen for CppLexerCodeGen {
         &self,
         _rules: &[TokenRule],
         alphabet: &[RangeInclusive<u32>],
-        dfa: &Dfa<Vec<&TokenRule>, usize>,
+        dfa: &Dfa<&TokenRule, usize>,
         gen: &mut GeneratedCodeWriter,
     ) {
         let code_writer = LexerCodeWriter::new(alphabet, dfa);

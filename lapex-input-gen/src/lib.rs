@@ -29,6 +29,7 @@ enum Ast<'src> {
     Rule(Rule<'src>),
     Pattern(ProductionPattern<'src>),
     Rules(Vec<Rule<'src>>),
+    Precedence(Option<u16>),
 }
 
 struct LapexAstVisitor<'stack, 'src> {
@@ -239,6 +240,11 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
             panic!("Stack is broken")
         };
         self.stack.pop();
+        let precedence = if let Some(Ast::Precedence(prec)) = self.stack.pop() {
+            prec
+        } else {
+            panic!("Stack is broken")
+        };
         let name = if let Some(Ast::Token(name)) = self.stack.pop() {
             name
         } else {
@@ -249,6 +255,7 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
             Some('"') => {
                 self.stack.push(Ast::Rule(Rule::TokenRule(TokenRule {
                     name,
+                    precedence,
                     pattern: lapex_input::TokenPattern::Literal {
                         characters: get_unescaped_chars(rhs),
                     },
@@ -257,6 +264,7 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
             Some('/') => {
                 self.stack.push(Ast::Rule(Rule::TokenRule(TokenRule {
                     name,
+                    precedence,
                     pattern: TokenPattern::Pattern {
                         pattern: get_regex_pattern(rhs).unwrap(),
                     },
@@ -364,6 +372,25 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
 
     fn reduce_string_or_regex_2(&mut self) {
         // NOOP
+    }
+
+    fn reduce_precedence(&mut self) {
+        self.stack.pop();
+        let precedence: u16 = if let Some(Ast::Token(digit)) = self.stack.pop() {
+            digit.parse().unwrap()
+        } else {
+            panic!("Stack is broken")
+        };
+        self.stack.pop();
+        self.stack.push(Ast::Precedence(Some(precedence)));
+    }
+
+    fn reduce_anon6_1(&mut self) {
+        // NOOP
+    }
+
+    fn reduce_anon6_2(&mut self) {
+        self.stack.push(Ast::Precedence(None));
     }
 }
 

@@ -262,16 +262,14 @@ impl<'grammar> CodeWriter<'grammar> {
                 .iter()
                 .filter(|s| if let Symbol::Epsilon = s { false } else { true })
                 .count();
-            if symbols_to_reduce > 0 {
-                let non_terminal: TokenStream =
-                    get_non_terminal_enum_name(self.grammar, rule.lhs().unwrap())
-                        .parse()
-                        .unwrap();
-                let rule_name: TokenStream = format!("Rule{}", rule_index).parse().unwrap();
-                rule_reductions.push(quote!{
-                    ReducedRule::#rule_name => (#symbols_to_reduce, StackSymbol::NonTerminal { non_terminal: NonTerminalType::#non_terminal })
-                });
-            }
+            let non_terminal: TokenStream =
+                get_non_terminal_enum_name(self.grammar, rule.lhs().unwrap())
+                    .parse()
+                    .unwrap();
+            let rule_name: TokenStream = format!("Rule{}", rule_index).parse().unwrap();
+            rule_reductions.push(quote!{
+                ReducedRule::#rule_name => (#symbols_to_reduce, StackSymbol::NonTerminal { non_terminal: NonTerminalType::#non_terminal })
+            });
         }
         rule_reductions
     }

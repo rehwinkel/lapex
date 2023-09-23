@@ -24,7 +24,8 @@ struct CommandLine {
     target: String,
 }
 
-fn main() {
+fn main() -> color_eyre::Result<()> {
+    color_eyre::install()?;
     let cli = CommandLine::parse();
     generate(
         !cli.no_lexer,
@@ -34,5 +35,5 @@ fn main() {
         Path::new(&cli.target),
         cli.language,
         lapex_input_gen::GeneratedLapexInputParser {},
-    );
+    )
 }

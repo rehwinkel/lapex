@@ -1,0 +1,7 @@
+token INT = "int";
+token INTEREST = /int(erest)?/;
+token IDENT = /[a-zA-Z0-9]+/;
+token NUMBER[1] = /[0-9]+/;
+
+entry bla;
+prod bla = INT INTEREST IDENT NUMBER;

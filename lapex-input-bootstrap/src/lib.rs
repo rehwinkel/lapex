@@ -192,6 +192,7 @@ fn parse_token_rule(input: &[u8]) -> IResult<&[u8], TokenRule> {
         input,
         TokenRule {
             name: std::str::from_utf8(name).unwrap(),
+            precedence: None,
             pattern,
         },
     ))

@@ -39,6 +39,21 @@ impl Pattern {
                 .collect(),
         }
     }
+
+    fn precedence(&self) -> usize {
+        match self {
+            Pattern::Sequence { elements } => elements.iter().map(|p| p.precedence()).sum(),
+            Pattern::Alternative { elements } => {
+                elements.iter().map(|p| p.precedence()).min().unwrap()
+            }
+            Pattern::Repetition { min, max: _, inner } => *min as usize * inner.precedence(),
+            Pattern::CharSet {
+                chars: _,
+                negated: _,
+            } => 1,
+            Pattern::Char { chars: _ } => 1,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -50,6 +65,7 @@ pub enum TokenPattern {
 #[derive(Debug)]
 pub struct TokenRule<'src> {
     pub name: &'src str,
+    pub precedence: Option<u16>,
     pub pattern: TokenPattern,
 }
 
@@ -63,9 +79,13 @@ impl<'src> TokenRule<'src> {
     }
 
     pub fn precedence(&self) -> usize {
-        match self.pattern {
-            TokenPattern::Literal { characters: _ } => 1,
-            TokenPattern::Pattern { pattern: _ } => 0,
+        if let Some(prec) = self.precedence {
+            prec as usize
+        } else {
+            match &self.pattern {
+                TokenPattern::Literal { characters } => characters.len() * 2,
+                TokenPattern::Pattern { pattern } => pattern.precedence(),
+            }
         }
     }
 }

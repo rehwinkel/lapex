@@ -1,6 +1,7 @@
 use std::{fmt::Display, io::BufWriter, path::Path};
 
 use clap::ValueEnum;
+use color_eyre::eyre::Context;
 use lapex_codegen::GeneratedCodeWriter;
 use lapex_cpp_codegen::{CppLLParserCodeGen, CppLRParserCodeGen, CppLexerCodeGen};
 use lapex_input::LapexInputParser;
@@ -85,7 +86,8 @@ fn generate_lexer_and_parser<L, LR, LL, F, I>(
     target_path: &Path,
     language: F,
     input_parser: I,
-) where
+) -> color_eyre::Result<()>
+where
     L: LexerCodeGen,
     LR: LRParserCodeGen,
     LL: LLParserCodeGen,
@@ -96,50 +98,55 @@ fn generate_lexer_and_parser<L, LR, LL, F, I>(
     let ll_codegen = language.ll_parser();
     let lr_codegen = language.lr_parser();
 
-    let file_contents = std::fs::read_to_string(grammar_path).unwrap();
-    let rules = input_parser.parse_lapex(file_contents.as_str()).unwrap();
+    let file_contents =
+        std::fs::read_to_string(grammar_path).wrap_err("Failed to open grammar file")?;
+    let rules = input_parser.parse_lapex(file_contents.as_str())?;
     let mut gen = GeneratedCodeWriter::with_default(|name| {
-        let file = std::fs::File::create(target_path.join(name)).unwrap();
-        BufWriter::new(file)
+        let file = std::fs::File::create(target_path.join(name))?;
+        Ok(BufWriter::new(file))
     });
     lexer_codegen.generate_tokens(rules.tokens(), &mut gen);
 
     if generate_lexer {
         let alphabet = lapex_lexer::generate_alphabet(rules.tokens());
         let (nfa_entrypoint, nfa) = lapex_lexer::generate_nfa(&alphabet, rules.tokens());
-        let dfa = lapex_lexer::apply_precedence_to_dfa(nfa.powerset_construction(nfa_entrypoint))
-            .unwrap();
+        let dfa = lapex_lexer::apply_precedence_to_dfa(nfa.powerset_construction(nfa_entrypoint))?;
 
         lexer_codegen.generate_lexer(rules.tokens(), &alphabet.get_ranges(), &dfa, &mut gen);
     }
 
-    let grammar = Grammar::from_rule_set(&rules).unwrap();
+    let grammar = Grammar::from_rule_set(&rules)?;
     match algorithm {
         ParsingAlgorithm::LL1 => {
-            let parser_table = lapex_parser::ll_parser::generate_table(&grammar).unwrap();
+            let parser_table = lapex_parser::ll_parser::generate_table(&grammar)?;
             ll_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
         ParsingAlgorithm::LR0 => {
-            let parser_table = lapex_parser::lr_parser::generate_table::<0>(&grammar).unwrap();
+            let parser_table = match lapex_parser::lr_parser::generate_table::<0>(&grammar) {
+                Ok(val) => val,
+                Err(_conflicts) => todo!(),
+            };
             if generate_table {
                 gen.generate_code("table", |output| {
                     lapex_parser::lr_parser::output_table(&grammar, &parser_table, output)
-                })
-                .unwrap();
+                })?;
             }
             lr_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
         ParsingAlgorithm::LR1 => {
-            let parser_table = lapex_parser::lr_parser::generate_table::<1>(&grammar).unwrap();
+            let parser_table = match lapex_parser::lr_parser::generate_table::<1>(&grammar) {
+                Ok(val) => val,
+                Err(_conflicts) => todo!(),
+            };
             if generate_table {
                 gen.generate_code("table", |output| {
                     lapex_parser::lr_parser::output_table(&grammar, &parser_table, output)
-                })
-                .unwrap();
+                })?;
             }
             lr_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
     };
+    Ok(())
 }
 
 pub fn generate<I>(
@@ -150,7 +157,8 @@ pub fn generate<I>(
     target_path: &Path,
     language: Language,
     input_parser: I,
-) where
+) -> color_eyre::Result<()>
+where
     I: LapexInputParser,
 {
     match language {
