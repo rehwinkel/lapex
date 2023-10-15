@@ -60,6 +60,9 @@ pub enum LapexErrorType {
         location: Location,
         item_text: String,
     },
+    ReduceReduce {
+        items: Vec<(Location, String)>,
+    },
     IO {
         file: PathBuf,
         error: std::io::Error,
@@ -98,7 +101,21 @@ impl LapexError {
                         },
                     }
                 }
-                Conflict::ReduceReduce { .. } => todo!(),
+                Conflict::ReduceReduce { items } => LapexError {
+                    severity: Severity::Error,
+                    error: LapexErrorType::ReduceReduce {
+                        items: items
+                            .iter()
+                            .map(|item| {
+                                let item_text = format!("{}", item.display(grammar));
+                                let location =
+                                    Location::from_span(item.production().span, file, contents)
+                                        .unwrap();
+                                (location, item_text)
+                            })
+                            .collect(),
+                    },
+                },
             })
             .collect()
     }
@@ -115,6 +132,7 @@ impl LapexErrorType {
     fn message(&self) -> &'static str {
         match self {
             LapexErrorType::ShiftReduce { .. } => "shift-reduce conflict in grammar",
+            LapexErrorType::ReduceReduce { .. } => "reduce-reduce conflict in grammar",
             LapexErrorType::IO { .. } => "failed to read grammar file",
         }
     }
@@ -136,6 +154,19 @@ impl Display for LapexErrorType {
                 ),
                 f,
             ),
+            LapexErrorType::ReduceReduce { items } => {
+                for (i, (location, item_text)) in items.iter().enumerate() {
+                    write_section(
+                        location,
+                        format_args!("Could reduce this item:\n\t{}", item_text.bold()),
+                        f,
+                    )?;
+                    if i + 1 < items.len() {
+                        writeln!(f)?;
+                    }
+                }
+                Ok(())
+            }
             LapexErrorType::IO { error, file } => {
                 write!(f, "     file: {}\n     reason: {}", file.display(), error)
             }

@@ -1,0 +1,5 @@
+token A = "a";
+
+entry blas;
+prod blas = A*;
+prod blas = A?;
