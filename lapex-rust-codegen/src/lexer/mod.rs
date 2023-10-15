@@ -2,21 +2,25 @@ use std::{io::Write, ops::RangeInclusive};
 
 use lapex_automaton::{AutomatonState, Dfa};
 use lapex_codegen::GeneratedCodeWriter;
-use lapex_input::TokenRule;
+use lapex_input::{Spanned, TokenRule};
 use lapex_lexer::LexerCodeGen;
 use quote::{__private::TokenStream, quote};
 
 use crate::{get_token_enum_name, RustLexerCodeGen};
 
 struct TokensCodeWriter<'grammar> {
-    rules: &'grammar [TokenRule<'grammar>],
+    rules: &'grammar [Spanned<TokenRule<'grammar>>],
 }
 
 impl<'grammar> TokensCodeWriter<'grammar> {
     fn write_token_enum(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         let mut other_tokens = Vec::new();
         for rule in self.rules {
-            writeln!(&mut other_tokens, "{},", get_token_enum_name(rule.token()))?;
+            writeln!(
+                &mut other_tokens,
+                "{},",
+                get_token_enum_name(rule.inner.name)
+            )?;
         }
         let other_tokens: TokenStream = String::from_utf8(other_tokens).unwrap().parse().unwrap();
 
@@ -71,7 +75,7 @@ impl<'grammar> LexerCodeWriter<'grammar> {
                 }
             }
             if let AutomatonState::Accepting(accept) = node {
-                let name: TokenStream = get_token_enum_name(accept.token()).parse().unwrap();
+                let name: TokenStream = get_token_enum_name(accept.name).parse().unwrap();
                 automaton_cases.push(quote! {
                     (#state_id, _) => {
                         return Ok(TokenType::#name);
@@ -187,7 +191,7 @@ impl<'grammar> LexerCodeWriter<'grammar> {
 impl LexerCodeGen for RustLexerCodeGen {
     fn generate_lexer(
         &self,
-        _rules: &[TokenRule],
+        _rules: &[Spanned<TokenRule>],
         alphabet: &[RangeInclusive<u32>],
         dfa: &Dfa<&TokenRule, usize>,
         gen: &mut GeneratedCodeWriter,
@@ -197,7 +201,7 @@ impl LexerCodeGen for RustLexerCodeGen {
             .unwrap();
     }
 
-    fn generate_tokens(&self, rules: &[TokenRule], gen: &mut GeneratedCodeWriter) {
+    fn generate_tokens(&self, rules: &[Spanned<TokenRule>], gen: &mut GeneratedCodeWriter) {
         let writer = TokensCodeWriter { rules };
         gen.generate_code("tokens.rs", |output| writer.write_token_enum(output))
             .unwrap();

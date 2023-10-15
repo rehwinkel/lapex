@@ -3,22 +3,22 @@ use std::{fmt::Display, hash::Hash};
 use crate::grammar::{Grammar, Rule, Symbol};
 
 #[derive(Debug, Clone)]
-pub struct Item<'grammar, const N: usize> {
-    rule: &'grammar Rule,
+pub struct Item<'grammar, 'rules, const N: usize> {
+    rule: &'grammar Rule<'rules>,
     dot_position: usize,
     lookahead: [Symbol; N],
 }
 
-pub struct ItemDisplay<'item, 'grammar, const N: usize> {
-    item: &'item Item<'grammar, N>,
+pub struct ItemDisplay<'item, 'grammar, 'rules, const N: usize> {
+    item: &'item Item<'grammar, 'rules, N>,
     grammar: &'grammar Grammar<'item>,
 }
 
-impl<'grammar, const N: usize> Item<'grammar, N> {
+impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
     pub fn display<'item>(
         &'item self,
         grammar: &'grammar Grammar<'grammar>,
-    ) -> ItemDisplay<'item, 'grammar, N> {
+    ) -> ItemDisplay<'item, 'grammar, 'rules, N> {
         ItemDisplay {
             item: self,
             grammar: grammar,
@@ -26,7 +26,7 @@ impl<'grammar, const N: usize> Item<'grammar, N> {
     }
 }
 
-impl<'rule, 'grammar, const N: usize> Display for ItemDisplay<'rule, 'grammar, N> {
+impl<'rule, 'grammar, 'rules, const N: usize> Display for ItemDisplay<'rule, 'grammar, 'rules, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let rhs_sequence_pre_dot: Vec<String> = self
             .item
@@ -63,8 +63,8 @@ impl<'rule, 'grammar, const N: usize> Display for ItemDisplay<'rule, 'grammar, N
     }
 }
 
-impl<'grammar, const N: usize> Item<'grammar, N> {
-    pub fn new(rule: &'grammar Rule, lookahead: [Symbol; N]) -> Self {
+impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
+    pub fn new(rule: &'grammar Rule<'rules>, lookahead: [Symbol; N]) -> Self {
         Item {
             dot_position: 0,
             rule,
@@ -77,7 +77,7 @@ impl<'grammar, const N: usize> Item<'grammar, N> {
     }
 }
 
-impl<'grammar, const N: usize> Item<'grammar, N> {
+impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
     pub fn symbol_after_dot_offset(&self, offset: usize) -> Option<Symbol> {
         self.rule.rhs().get(self.dot_position + offset).map(|s| *s)
     }
@@ -103,12 +103,12 @@ impl<'grammar, const N: usize> Item<'grammar, N> {
         }
     }
 
-    pub fn rule(&self) -> &'grammar Rule {
+    pub fn rule(&self) -> &'grammar Rule<'rules> {
         self.rule
     }
 }
 
-impl<'grammar, const N: usize> Display for Item<'grammar, N> {
+impl<'grammar, 'rules, const N: usize> Display for Item<'grammar, 'rules, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?} -> ", self.rule.lhs())?;
         write!(f, "{:?}", &self.rule.rhs()[0..self.dot_position])?;
@@ -118,7 +118,7 @@ impl<'grammar, const N: usize> Display for Item<'grammar, N> {
     }
 }
 
-impl<'grammar, const N: usize> PartialEq for Item<'grammar, N> {
+impl<'grammar, 'rules, const N: usize> PartialEq for Item<'grammar, 'rules, N> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.rule, other.rule)
             && self.dot_position == other.dot_position
@@ -126,9 +126,9 @@ impl<'grammar, const N: usize> PartialEq for Item<'grammar, N> {
     }
 }
 
-impl<'grammar, const N: usize> Eq for Item<'grammar, N> {}
+impl<'grammar, 'rules, const N: usize> Eq for Item<'grammar, 'rules, N> {}
 
-impl<'grammar, const N: usize> Hash for Item<'grammar, N> {
+impl<'grammar, 'rules, const N: usize> Hash for Item<'grammar, 'rules, N> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         std::ptr::hash(self.rule, state);
         self.dot_position.hash(state);
@@ -136,7 +136,7 @@ impl<'grammar, const N: usize> Hash for Item<'grammar, N> {
     }
 }
 
-impl<'grammar, const N: usize> PartialOrd for Item<'grammar, N> {
+impl<'grammar, 'rules, const N: usize> PartialOrd for Item<'grammar, 'rules, N> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(
             (self.rule as *const Rule)
@@ -146,7 +146,7 @@ impl<'grammar, const N: usize> PartialOrd for Item<'grammar, N> {
     }
 }
 
-impl<'grammar, const N: usize> Ord for Item<'grammar, N> {
+impl<'grammar, 'rules, const N: usize> Ord for Item<'grammar, 'rules, N> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         (self.rule as *const Rule)
             .cmp(&(other.rule as *const Rule))

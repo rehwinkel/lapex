@@ -105,14 +105,14 @@ where
         let file = std::fs::File::create(target_path.join(name))?;
         Ok(BufWriter::new(file))
     });
-    lexer_codegen.generate_tokens(rules.tokens(), &mut gen);
+    lexer_codegen.generate_tokens(&rules.token_rules, &mut gen);
 
     if generate_lexer {
-        let alphabet = lapex_lexer::generate_alphabet(rules.tokens());
-        let (nfa_entrypoint, nfa) = lapex_lexer::generate_nfa(&alphabet, rules.tokens());
+        let alphabet = lapex_lexer::generate_alphabet(&rules.token_rules);
+        let (nfa_entrypoint, nfa) = lapex_lexer::generate_nfa(&alphabet, &rules.token_rules);
         let dfa = lapex_lexer::apply_precedence_to_dfa(nfa.powerset_construction(nfa_entrypoint))?;
 
-        lexer_codegen.generate_lexer(rules.tokens(), &alphabet.get_ranges(), &dfa, &mut gen);
+        lexer_codegen.generate_lexer(&rules.token_rules, &alphabet.get_ranges(), &dfa, &mut gen);
     }
 
     let grammar = Grammar::from_rule_set(&rules)?;
@@ -136,7 +136,11 @@ where
         ParsingAlgorithm::LR1 => {
             let parser_table = match lapex_parser::lr_parser::generate_table::<1>(&grammar) {
                 Ok(val) => val,
-                Err(_conflicts) => todo!(),
+                Err(_conflicts) => {
+                    println!("{:#?}", grammar);
+                    println!("{:#?}", _conflicts);
+                    todo!()
+                }
             };
             if generate_table {
                 gen.generate_code("table", |output| {

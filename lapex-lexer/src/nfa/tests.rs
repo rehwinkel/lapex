@@ -1,10 +1,10 @@
-use lapex_input::{Characters, Pattern, TokenPattern, TokenRule};
+use lapex_input::{Characters, Pattern, Spanned, TokenPattern, TokenRule};
 
 use crate::{generate_alphabet, generate_nfa};
 
 #[test]
 fn test_repetition_option() {
-    let rules = [TokenRule {
+    let rules = [Spanned::zero(TokenRule {
         name: "test",
         precedence: None,
         pattern: TokenPattern::Pattern {
@@ -16,7 +16,7 @@ fn test_repetition_option() {
                 }),
             },
         },
-    }];
+    })];
     let alphabet = generate_alphabet(&rules);
     let (_entry, nfa) = generate_nfa(&alphabet, &rules);
     println!("{:?}", alphabet);
@@ -25,7 +25,7 @@ fn test_repetition_option() {
 
 #[test]
 fn test_repetition_bounded() {
-    let rules = [TokenRule {
+    let rules = [Spanned::zero(TokenRule {
         name: "test",
         precedence: None,
         pattern: TokenPattern::Pattern {
@@ -37,7 +37,7 @@ fn test_repetition_bounded() {
                 }),
             },
         },
-    }];
+    })];
     let alphabet = generate_alphabet(&rules);
     let (_entry, nfa) = generate_nfa(&alphabet, &rules);
     println!("{:?}", alphabet);
@@ -46,7 +46,7 @@ fn test_repetition_bounded() {
 
 #[test]
 fn test_repetition_unbounded() {
-    let rules = [TokenRule {
+    let rules = [Spanned::zero(TokenRule {
         name: "test",
         precedence: None,
         pattern: TokenPattern::Pattern {
@@ -58,7 +58,7 @@ fn test_repetition_unbounded() {
                 }),
             },
         },
-    }];
+    })];
     let alphabet = generate_alphabet(&rules);
     let (_entry, nfa) = generate_nfa(&alphabet, &rules);
     println!("{:?}", alphabet);
@@ -67,7 +67,7 @@ fn test_repetition_unbounded() {
 
 #[test]
 fn test_repetition_lower_bounded() {
-    let rules = [TokenRule {
+    let rules = [Spanned::zero(TokenRule {
         name: "test",
         precedence: None,
         pattern: TokenPattern::Pattern {
@@ -79,7 +79,7 @@ fn test_repetition_lower_bounded() {
                 }),
             },
         },
-    }];
+    })];
     let alphabet = generate_alphabet(&rules);
     let (_entry, nfa) = generate_nfa(&alphabet, &rules);
     println!("{:?}", alphabet);

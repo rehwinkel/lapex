@@ -1,8 +1,8 @@
 use std::{error::Error, fmt::Display, str::Utf8Error};
 
 use lapex_input::{
-    Characters, EntryRule, LapexInputParser, Pattern, ProductionPattern, ProductionRule, Rule,
-    RuleSet, TokenPattern, TokenRule,
+    Characters, EntryRule, LapexInputParser, Pattern, ProductionPattern, ProductionRule, RuleSet,
+    SourcePos, SourceSpan, Spanned, TokenPattern, TokenRule,
 };
 use parser::Parser;
 use regex_syntax::hir::{Class, Hir, HirKind};
@@ -21,11 +21,19 @@ mod tokens {
 #[derive(Debug)]
 struct TokenData<'src> {
     text: &'src str,
+    span: SourceSpan,
+}
+
+#[derive(Debug)]
+enum Rule<'src> {
+    TokenRule(Spanned<TokenRule<'src>>),
+    ProductionRule(Spanned<ProductionRule<'src>>),
+    EntryRule(Spanned<EntryRule<'src>>),
 }
 
 #[derive(Debug)]
 enum Ast<'src> {
-    Token(&'src str),
+    Token(TokenData<'src>),
     Rule(Rule<'src>),
     Pattern(ProductionPattern<'src>),
     Rules(Vec<Rule<'src>>),
@@ -135,7 +143,7 @@ fn get_regex_pattern(text: &str) -> Result<Pattern, RegexConversionError> {
 
 impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 'src> {
     fn shift(&mut self, _token: TokenType, data: TokenData<'src>) {
-        self.stack.push(Ast::Token(data.text));
+        self.stack.push(Ast::Token(data));
     }
 
     fn reduce_unary_1(&mut self) {
@@ -163,16 +171,15 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
         };
         self.stack.pop();
         let name = if let Some(Ast::Token(name)) = self.stack.pop() {
-            name
+            name.text
         } else {
             panic!("Stack is broken")
         };
         self.stack.pop();
         self.stack
-            .push(Ast::Rule(Rule::ProductionRule(ProductionRule {
-                name,
-                pattern: rhs,
-            })));
+            .push(Ast::Rule(Rule::ProductionRule(Spanned::zero(
+                ProductionRule { name, pattern: rhs },
+            ))));
     }
 
     fn reduce_repetition_zero(&mut self) {
@@ -189,7 +196,7 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
 
     fn reduce_item_1(&mut self) {
         let name = if let Some(Ast::Token(name)) = self.stack.pop() {
-            name
+            name.text
         } else {
             panic!("Stack is broken")
         };
@@ -235,7 +242,7 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
     fn reduce_token_rule(&mut self) {
         self.stack.pop();
         let rhs = if let Some(Ast::Token(rhs)) = self.stack.pop() {
-            rhs
+            rhs.text
         } else {
             panic!("Stack is broken")
         };
@@ -246,29 +253,31 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
             panic!("Stack is broken")
         };
         let name = if let Some(Ast::Token(name)) = self.stack.pop() {
-            name
+            name.text
         } else {
             panic!("Stack is broken")
         };
         self.stack.pop();
         match rhs.chars().next() {
             Some('"') => {
-                self.stack.push(Ast::Rule(Rule::TokenRule(TokenRule {
-                    name,
-                    precedence,
-                    pattern: lapex_input::TokenPattern::Literal {
-                        characters: get_unescaped_chars(rhs),
-                    },
-                })));
+                self.stack
+                    .push(Ast::Rule(Rule::TokenRule(Spanned::zero(TokenRule {
+                        name,
+                        precedence,
+                        pattern: lapex_input::TokenPattern::Literal {
+                            characters: get_unescaped_chars(rhs),
+                        },
+                    }))));
             }
             Some('/') => {
-                self.stack.push(Ast::Rule(Rule::TokenRule(TokenRule {
-                    name,
-                    precedence,
-                    pattern: TokenPattern::Pattern {
-                        pattern: get_regex_pattern(rhs).unwrap(),
-                    },
-                })));
+                self.stack
+                    .push(Ast::Rule(Rule::TokenRule(Spanned::zero(TokenRule {
+                        name,
+                        precedence,
+                        pattern: TokenPattern::Pattern {
+                            pattern: get_regex_pattern(rhs).unwrap(),
+                        },
+                    }))));
             }
             _ => unreachable!(),
         }
@@ -288,13 +297,15 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
     fn reduce_entry_rule(&mut self) {
         self.stack.pop();
         let name = if let Some(Ast::Token(name)) = self.stack.pop() {
-            name
+            name.text
         } else {
             panic!("Stack is broken")
         };
         self.stack.pop();
         self.stack
-            .push(Ast::Rule(Rule::EntryRule(EntryRule { name })));
+            .push(Ast::Rule(Rule::EntryRule(Spanned::zero(EntryRule {
+                name,
+            }))));
     }
 
     fn reduce_repetition_one(&mut self) {
@@ -377,7 +388,7 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
     fn reduce_precedence(&mut self) {
         self.stack.pop();
         let precedence: u16 = if let Some(Ast::Token(digit)) = self.stack.pop() {
-            digit.parse().unwrap()
+            digit.text.parse().unwrap()
         } else {
             panic!("Stack is broken")
         };
@@ -385,11 +396,11 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
         self.stack.push(Ast::Precedence(Some(precedence)));
     }
 
-    fn reduce_anon6_1(&mut self) {
+    fn reduce_anon24_1(&mut self) {
         // NOOP
     }
 
-    fn reduce_anon6_2(&mut self) {
+    fn reduce_anon24_2(&mut self) {
         self.stack.push(Ast::Precedence(None));
     }
 }
@@ -404,15 +415,38 @@ impl LapexInputParser for GeneratedLapexInputParser {
         let mut lexer = lexer::Lexer::new(source);
         let mut stack = Vec::new();
         let visitor = LapexAstVisitor { stack: &mut stack };
+        let mut col: u16 = 1;
+        let mut line: u16 = 1;
         let token_fun = || {
+            let start_line = line;
+            let start_col = col;
             let mut next_tk = lexer.next().unwrap();
-            while let TokenType::TkWhitespace = next_tk {
-                next_tk = lexer.next().unwrap();
+            col += lexer.slice().len() as u16;
+            loop {
+                match next_tk {
+                    TokenType::TkNewline => {
+                        next_tk = lexer.next().unwrap();
+                        col = 1;
+                        line += 1;
+                    }
+                    TokenType::TkWhitespace => {
+                        next_tk = lexer.next().unwrap();
+                        col += lexer.slice().len() as u16;
+                    }
+                    _ => break,
+                }
             }
             return (
                 next_tk,
                 TokenData {
                     text: lexer.slice(),
+                    span: SourceSpan {
+                        start: SourcePos {
+                            line: start_line,
+                            col: start_col,
+                        },
+                        end: SourcePos { line, col },
+                    },
                 },
             );
         };
@@ -438,10 +472,6 @@ impl LapexInputParser for GeneratedLapexInputParser {
 
         assert_eq!(entry_rules.len(), 1);
         let entry_rule = entry_rules.pop().unwrap();
-        Ok(RuleSet {
-            entry_rule: entry_rule,
-            token_rules,
-            production_rules: prod_rules,
-        })
+        Ok(RuleSet::new(entry_rule, token_rules, prod_rules))
     }
 }

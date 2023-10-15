@@ -21,14 +21,14 @@ pub use codegen::LRParserCodeGen;
 
 use item::Item;
 
-type ItemSet<'grammar, const N: usize> = BTreeSet<Item<'grammar, N>>;
+type ItemSet<'grammar, 'rules, const N: usize> = BTreeSet<Item<'grammar, 'rules, N>>;
 
-fn expand_item<'grammar, const N: usize>(
-    item: Item<'grammar, N>,
+fn expand_item<'grammar: 'rules, 'rules, const N: usize>(
+    item: Item<'grammar, 'rules, N>,
     grammar: &'grammar Grammar,
     first_sets: &HashMap<Symbol, HashSet<Symbol>>,
-) -> ItemSet<'grammar, N> {
-    let mut item_set: ItemSet<'grammar, N> = BTreeSet::new();
+) -> ItemSet<'grammar, 'rules, N> {
+    let mut item_set: ItemSet<'grammar, 'rules, N> = BTreeSet::new();
     let mut to_expand: Vec<Item<N>> = Vec::new();
     item_set.insert(item.clone());
     to_expand.push(item);
@@ -62,7 +62,7 @@ fn expand_item<'grammar, const N: usize>(
 fn determine_lookaheads_to_expand<const N: usize>(
     item: &Item<N>,
     first_sets: &HashMap<Symbol, HashSet<Symbol>>,
-    top: &Item<'_, N>,
+    top: &Item<N>,
 ) -> Vec<[Symbol; N]> {
     if N > 1 {
         panic!("LR(N) with N > 1 not supported");
@@ -91,13 +91,13 @@ fn determine_lookaheads_to_expand<const N: usize>(
     lookaheads
 }
 
-struct ParserGraph<'grammar, const N: usize> {
-    state_map: BidiMap<ItemSet<'grammar, N>, NodeIndex>,
+struct ParserGraph<'grammar: 'rules, 'rules, const N: usize> {
+    state_map: BidiMap<ItemSet<'grammar, 'rules, N>, NodeIndex>,
     graph: Graph<(), Symbol>,
     entry_state: Option<NodeIndex>,
 }
 
-impl<'grammar, const N: usize> ParserGraph<'grammar, N> {
+impl<'grammar, 'rules, const N: usize> ParserGraph<'grammar, 'rules, N> {
     fn new() -> Self {
         ParserGraph {
             state_map: BidiMap::new(),
@@ -106,17 +106,17 @@ impl<'grammar, const N: usize> ParserGraph<'grammar, N> {
         }
     }
 
-    fn add_state(&mut self, set: ItemSet<'grammar, N>) -> NodeIndex {
+    fn add_state(&mut self, set: ItemSet<'grammar, 'rules, N>) -> NodeIndex {
         let entry_node = self.graph.add_node(());
         self.state_map.insert(set, entry_node);
         entry_node
     }
 
-    fn get_item_set(&self, state: &NodeIndex) -> Option<&ItemSet<'grammar, N>> {
+    fn get_item_set(&self, state: &NodeIndex) -> Option<&ItemSet<'grammar, 'rules, N>> {
         self.state_map.get_b_to_a(state)
     }
 
-    fn get_state(&self, set: &ItemSet<'grammar, N>) -> Option<&NodeIndex> {
+    fn get_state(&self, set: &ItemSet<'grammar, 'rules, N>) -> Option<&NodeIndex> {
         self.state_map.get_a_to_b(set)
     }
 
@@ -130,10 +130,10 @@ impl<'grammar, const N: usize> ParserGraph<'grammar, N> {
     }
 }
 
-fn generate_parser_graph<'grammar, const N: usize>(
-    grammar: &'grammar Grammar,
+fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
+    grammar: &'grammar Grammar<'rules>,
     first_sets: &HashMap<Symbol, HashSet<Symbol>>,
-) -> ParserGraph<'grammar, N> {
+) -> ParserGraph<'grammar, 'rules, N> {
     let entry_item = Item::new(grammar.entry_rule(), [Symbol::End; N]);
     let entry_item_set = expand_item(entry_item, grammar, first_sets);
     let mut parser_graph = ParserGraph::new();
@@ -145,7 +145,7 @@ fn generate_parser_graph<'grammar, const N: usize>(
 
     while let Some(start_state) = unprocessed_states.pop() {
         let item_set = parser_graph.get_item_set(&start_state).unwrap();
-        let mut transition_map: HashMap<Symbol, ItemSet<'grammar, N>> = HashMap::new();
+        let mut transition_map: HashMap<Symbol, ItemSet<'grammar, 'rules, N>> = HashMap::new();
         for item in item_set {
             if let Some(transition_symbol) = item.symbol_after_dot() {
                 let mut target_item = item.clone();
@@ -174,19 +174,19 @@ fn generate_parser_graph<'grammar, const N: usize>(
 }
 
 #[derive(Debug)]
-pub enum Conflict<'grammar, const N: usize> {
+pub enum Conflict<'grammar, 'rules, const N: usize> {
     ShiftReduce {
-        item_to_reduce: Item<'grammar, N>,
+        item_to_reduce: Item<'grammar, 'rules, N>,
         shift_symbol: Symbol,
     },
     ReduceReduce {
-        items: Vec<Item<'grammar, N>>,
+        items: Vec<Item<'grammar, 'rules, N>>,
     },
 }
 
-fn find_conflicts<'grammar, const N: usize>(
-    parser_graph: &ParserGraph<'grammar, N>,
-) -> Vec<Conflict<'grammar, N>> {
+fn find_conflicts<'grammar, 'rules, const N: usize>(
+    parser_graph: &ParserGraph<'grammar, 'rules, N>,
+) -> Vec<Conflict<'grammar, 'rules, N>> {
     let mut conflicts = Vec::new();
     for (item_set, state) in parser_graph.state_map.iter() {
         let mut reducing_items: HashMap<[Symbol; N], Vec<&Item<N>>> = HashMap::new();
@@ -229,14 +229,14 @@ fn find_conflicts<'grammar, const N: usize>(
 }
 
 #[derive(Clone, Debug)]
-pub enum TableEntry<'grammar> {
+pub enum TableEntry<'grammar, 'rules> {
     Shift { target: usize },
-    Reduce { rule: &'grammar Rule },
+    Reduce { rule: &'grammar Rule<'rules> },
     Error,
     Accept,
 }
 
-impl<'grammar> Display for TableEntry<'grammar> {
+impl<'grammar, 'rules> Display for TableEntry<'grammar, 'rules> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TableEntry::Shift { target } => write!(f, "s{}", target),
@@ -248,13 +248,13 @@ impl<'grammar> Display for TableEntry<'grammar> {
 }
 
 #[derive(Debug)]
-pub struct ActionGotoTable<'grammar> {
-    entries: HashMap<(usize, Symbol), TableEntry<'grammar>>,
+pub struct ActionGotoTable<'grammar, 'rules> {
+    entries: HashMap<(usize, Symbol), TableEntry<'grammar, 'rules>>,
     state_count: usize,
     entry_state: usize,
 }
 
-impl<'grammar> ActionGotoTable<'grammar> {
+impl<'grammar: 'rules, 'rules> ActionGotoTable<'grammar, 'rules> {
     fn new(state_count: usize, entry_state: usize) -> Self {
         ActionGotoTable {
             entries: HashMap::new(),
@@ -296,7 +296,7 @@ impl<'grammar> ActionGotoTable<'grammar> {
         self.state_count
     }
 
-    fn insert_reduce(&mut self, state: NodeIndex, symbol: Symbol, rule: &'grammar Rule) {
+    fn insert_reduce(&mut self, state: NodeIndex, symbol: Symbol, rule: &'grammar Rule<'rules>) {
         let prev_entry = self
             .entries
             .insert((state.index(), symbol), TableEntry::Reduce { rule });
@@ -340,9 +340,9 @@ impl<'grammar> ActionGotoTable<'grammar> {
     }
 }
 
-pub fn generate_table<'grammar, const N: usize>(
-    grammar: &'grammar Grammar,
-) -> Result<ActionGotoTable<'grammar>, Vec<Conflict<'grammar, N>>> {
+pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
+    grammar: &'grammar Grammar<'rules>,
+) -> Result<ActionGotoTable<'grammar, 'rules>, Vec<Conflict<'grammar, 'rules, N>>> {
     let first_sets = if N > 0 {
         compute_first_sets(grammar)
     } else {
@@ -356,7 +356,8 @@ pub fn generate_table<'grammar, const N: usize>(
 
     let entry_state = parser_graph.entry_state.unwrap().index();
     let node_count = parser_graph.graph.node_indices().count();
-    let mut table: ActionGotoTable<'grammar> = ActionGotoTable::new(node_count, entry_state);
+    let mut table: ActionGotoTable<'grammar, 'rules> =
+        ActionGotoTable::new(node_count, entry_state);
     for (item_set, state) in parser_graph.state_map.iter() {
         for item in item_set {
             // we can continue after this since there can be at most one reducable (conflicts already checked)
@@ -397,9 +398,9 @@ pub fn generate_table<'grammar, const N: usize>(
     Ok(table)
 }
 
-pub fn output_table<'grammar>(
+pub fn output_table<'grammar, 'rules>(
     grammar: &'grammar Grammar,
-    table: &ActionGotoTable<'grammar>,
+    table: &ActionGotoTable<'grammar, 'rules>,
     output: &mut dyn Write,
 ) -> std::io::Result<()> {
     let rule_index_map: HashMap<*const Rule, usize> = grammar

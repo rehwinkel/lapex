@@ -1,5 +1,35 @@
 use std::fmt::{Display, Formatter};
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+pub struct SourcePos {
+    pub line: u16,
+    pub col: u16,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+pub struct SourceSpan {
+    pub start: SourcePos,
+    pub end: SourcePos,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+pub struct Spanned<T> {
+    pub span: SourceSpan,
+    pub inner: T,
+}
+
+impl<T> Spanned<T> {
+    pub fn zero(inner: T) -> Self {
+        Spanned {
+            span: SourceSpan {
+                start: SourcePos { line: 0, col: 0 },
+                end: SourcePos { line: 0, col: 0 },
+            },
+            inner,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Characters {
     Single(char),
@@ -70,14 +100,6 @@ pub struct TokenRule<'src> {
 }
 
 impl<'src> TokenRule<'src> {
-    pub fn token(&self) -> &str {
-        self.name
-    }
-
-    pub fn pattern(&self) -> &TokenPattern {
-        &self.pattern
-    }
-
     pub fn precedence(&self) -> usize {
         if let Some(prec) = self.precedence {
             prec as usize
@@ -96,29 +118,9 @@ pub struct ProductionRule<'src> {
     pub pattern: ProductionPattern<'src>,
 }
 
-impl<'src> ProductionRule<'src> {
-    pub fn name(&self) -> &str {
-        self.name
-    }
-
-    pub fn pattern(&self) -> &ProductionPattern {
-        &self.pattern
-    }
-}
-
 #[derive(Debug)]
 pub struct EntryRule<'src> {
     pub name: &'src str,
-}
-
-impl<'src> EntryRule<'src> {
-    pub fn new(name: &'src str) -> Self {
-        EntryRule { name }
-    }
-
-    pub fn name(&self) -> &str {
-        self.name
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash)]
@@ -144,28 +146,23 @@ pub enum ProductionPattern<'src> {
 }
 
 #[derive(Debug)]
-pub enum Rule<'src> {
-    TokenRule(TokenRule<'src>),
-    ProductionRule(ProductionRule<'src>),
-    EntryRule(EntryRule<'src>),
-}
-
-#[derive(Debug)]
 pub struct RuleSet<'src> {
-    pub entry_rule: EntryRule<'src>,
-    pub token_rules: Vec<TokenRule<'src>>,
-    pub production_rules: Vec<ProductionRule<'src>>,
+    pub entry_rule: Spanned<EntryRule<'src>>,
+    pub token_rules: Vec<Spanned<TokenRule<'src>>>,
+    pub production_rules: Vec<Spanned<ProductionRule<'src>>>,
 }
 
 impl<'src> RuleSet<'src> {
-    pub fn entry(&self) -> &EntryRule {
-        &self.entry_rule
-    }
-    pub fn tokens(&self) -> &[TokenRule] {
-        &self.token_rules
-    }
-    pub fn productions(&self) -> &[ProductionRule] {
-        &self.production_rules
+    pub fn new(
+        entry_rule: Spanned<EntryRule<'src>>,
+        token_rules: Vec<Spanned<TokenRule<'src>>>,
+        production_rules: Vec<Spanned<ProductionRule<'src>>>,
+    ) -> Self {
+        RuleSet {
+            entry_rule,
+            token_rules,
+            production_rules,
+        }
     }
 }
 

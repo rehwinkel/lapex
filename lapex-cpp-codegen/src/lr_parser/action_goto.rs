@@ -7,8 +7,10 @@ use lapex_parser::{
 
 use super::CodeWriter;
 
-impl<'parser> CodeWriter<'parser> {
-    fn write_goto_cases<'a, I: Iterator<Item = (Symbol, Option<&'a TableEntry<'a>>)>>(
+impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
+    fn write_goto_cases<
+        I: Iterator<Item = (Symbol, Option<&'grammar TableEntry<'grammar, 'rules>>)>,
+    >(
         &self,
         states: I,
         output: &mut dyn Write,
@@ -32,7 +34,7 @@ impl<'parser> CodeWriter<'parser> {
 
     fn write_goto_case_header(
         &self,
-        entry: &TableEntry<'_>,
+        entry: &TableEntry,
         output: &mut dyn Write,
         symbol: Symbol,
     ) -> Result<bool, Error> {
@@ -59,7 +61,7 @@ impl<'parser> CodeWriter<'parser> {
 
     fn write_goto_case_body(
         &self,
-        entry: &TableEntry<'_>,
+        entry: &TableEntry,
         output: &mut dyn Write,
     ) -> Result<(), Error> {
         writeln!(output, "{{")?;
@@ -77,7 +79,9 @@ impl<'parser> CodeWriter<'parser> {
         writeln!(output, "}}")
     }
 
-    fn write_action_cases<'a, I: Iterator<Item = (Symbol, Option<&'a TableEntry<'a>>)>>(
+    fn write_action_cases<
+        I: Iterator<Item = (Symbol, Option<&'grammar TableEntry<'grammar, 'rules>>)>,
+    >(
         &self,
         states: I,
         output: &mut dyn Write,
@@ -118,7 +122,7 @@ impl<'parser> CodeWriter<'parser> {
 
     fn write_action_case_body(
         &self,
-        entry: &TableEntry<'_>,
+        entry: &TableEntry,
         output: &mut dyn Write,
     ) -> Result<(), Error> {
         writeln!(output, "{{")?;
@@ -140,7 +144,7 @@ impl<'parser> CodeWriter<'parser> {
 
     fn write_action_case_header(
         &self,
-        entry: &TableEntry<'_>,
+        entry: &TableEntry,
         output: &mut dyn Write,
         symbol: Symbol,
     ) -> Result<bool, Error> {

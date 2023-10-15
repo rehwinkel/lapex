@@ -47,7 +47,7 @@ fn get_token_enum_name(name: &str) -> String {
 }
 
 fn get_non_terminal_enum_name(grammar: &Grammar, non_terminal: Symbol) -> String {
-    if let Some(name) = grammar.is_named_non_terminal(non_terminal) {
+    if let Some(name) = grammar.get_production_name(&non_terminal) {
         format!("Nt{}", convert_snake_to_upper_camel(name))
     } else {
         if let Symbol::NonTerminal(non_terminal_index) = non_terminal {

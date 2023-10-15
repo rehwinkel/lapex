@@ -9,14 +9,14 @@ use quote::{__private::TokenStream, quote};
 
 use crate::{get_non_terminal_enum_name, get_token_enum_name, RustLRParserCodeGen};
 
-struct CodeWriter<'grammar> {
+struct CodeWriter<'grammar, 'rules> {
     grammar: &'grammar Grammar<'grammar>,
-    parser_table: &'grammar ActionGotoTable<'grammar>,
-    rule_index_map: HashMap<*const Rule, usize>,
-    rules_by_non_terminal: HashMap<Symbol, Vec<&'grammar Rule>>,
+    parser_table: &'grammar ActionGotoTable<'grammar, 'rules>,
+    rule_index_map: HashMap<*const Rule<'rules>, usize>,
+    rules_by_non_terminal: HashMap<Symbol, Vec<&'grammar Rule<'rules>>>,
 }
 
-impl<'grammar> CodeWriter<'grammar> {
+impl<'grammar: 'rules, 'rules> CodeWriter<'grammar, 'rules> {
     fn new(grammar: &'grammar Grammar, parser_table: &'grammar ActionGotoTable) -> Self {
         let mut rules_by_non_terminal = HashMap::new();
         for rule in grammar.rules() {
@@ -42,11 +42,11 @@ impl<'grammar> CodeWriter<'grammar> {
     }
 }
 
-impl<'grammar> CodeWriter<'grammar> {
+impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
     fn get_non_terminal_name(&self, non_terminal: &Symbol) -> String {
         let non_terminal_name = self
             .grammar
-            .is_named_non_terminal(*non_terminal)
+            .get_production_name(non_terminal)
             .map(|s| String::from(s))
             .unwrap_or_else(|| {
                 if let Symbol::NonTerminal(index) = non_terminal {
@@ -121,7 +121,7 @@ impl<'grammar> CodeWriter<'grammar> {
         &self,
         symbol: Symbol,
         state: usize,
-        entry: &TableEntry<'_>,
+        entry: &TableEntry,
         gotos: &mut Vec<TokenStream>,
     ) {
         let condition = match symbol {
@@ -195,7 +195,7 @@ impl<'grammar> CodeWriter<'grammar> {
         &self,
         symbol: Symbol,
         state: usize,
-        entry: &TableEntry<'_>,
+        entry: &TableEntry,
         actions: &mut Vec<TokenStream>,
     ) {
         let condition = match symbol {
@@ -235,7 +235,7 @@ impl<'grammar> CodeWriter<'grammar> {
 
     fn extract_expected_symbols(
         &self,
-        entry: &TableEntry<'grammar>,
+        entry: &TableEntry,
         symbol: Symbol,
         expected_symbols: &mut Vec<Option<u32>>,
     ) {
@@ -479,7 +479,7 @@ impl<'grammar> CodeWriter<'grammar> {
     }
 }
 
-fn get_rule_from_pointer(rule: &*const Rule) -> &Rule {
+fn get_rule_from_pointer<'a, 'rules>(rule: &*const Rule<'rules>) -> &'a Rule<'rules> {
     // We created the hashmap from a known list of rules. The rule pointers are derived from the grammar rules, and the grammar outlives this struct.
     // Therefore, this operation is safe.
     let rule = unsafe { rule.as_ref() }.unwrap();

@@ -1,21 +1,20 @@
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     error::Error,
     fmt::{Debug, Display},
     hash::Hash,
     num::TryFromIntError,
 };
 
-use lapex_input::{ProductionPattern, ProductionRule, RuleSet, TokenRule};
+use lapex_input::{ProductionRule, RuleSet, SourceSpan};
+
+use crate::grammar_builder::GrammarBuilder;
 
 #[derive(Debug, PartialEq)]
 pub enum GrammarError {
     TooManyRules,
     MissingSymbol(String),
-    ConflictingRules {
-        rule_name: String,
-        rule_matches: usize,
-    },
+    ConflictingRules { rules: Vec<SourceSpan> },
     RuleWithTerminalLeftHandSide,
 }
 
@@ -42,18 +41,33 @@ pub enum Symbol {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Rule {
+pub struct Rule<'rules> {
     lhs: Option<u32>,
     rhs: Vec<Symbol>,
+    rule: &'rules ProductionRule<'rules>,
+}
+
+impl<'rules> Rule<'rules> {
+    pub fn entry(entry_symbol: Symbol, rule: &'rules ProductionRule<'rules>) -> Self {
+        Rule {
+            lhs: None,
+            rhs: vec![entry_symbol],
+            rule,
+        }
+    }
 }
 
 pub struct RuleDisplay<'rule, 'grammar> {
-    rule: &'rule Rule,
+    rule: &'rule Rule<'rule>,
     grammar: &'grammar Grammar<'rule>,
 }
 
-impl Rule {
-    pub fn new(lhs: Symbol, rhs: Vec<Symbol>) -> Result<Self, GrammarError> {
+impl<'rules> Rule<'rules> {
+    pub fn new(
+        lhs: Symbol,
+        rhs: Vec<Symbol>,
+        rule: &'rules ProductionRule,
+    ) -> Result<Self, GrammarError> {
         let non_terminal_index = match lhs {
             Symbol::NonTerminal(i) => Some(i),
             _ => None,
@@ -62,6 +76,7 @@ impl Rule {
             Ok(Rule {
                 lhs: Some(non_terminal_index),
                 rhs,
+                rule,
             })
         } else {
             Err(GrammarError::RuleWithTerminalLeftHandSide)
@@ -110,148 +125,71 @@ impl<'rule, 'grammar> Display for RuleDisplay<'rule, 'grammar> {
 
 #[derive(Debug)]
 pub struct Grammar<'rules> {
-    rules: Vec<Rule>,
-    non_terminal_mapping: HashMap<Symbol, &'rules ProductionRule<'rules>>,
-    tokens: &'rules [TokenRule<'rules>],
-    non_terminal_count: u32,
+    rules: Vec<Rule<'rules>>,
+    anonymous_non_terminals: Vec<Symbol>,
+    productions: BTreeMap<Symbol, &'rules str>,
+    tokens: BTreeMap<Symbol, &'rules str>,
+    entry_rule: Rule<'rules>,
     entry_symbol: Symbol,
-    entry_rule: Rule,
 }
 
-struct GrammarBuilder<'rules> {
-    temp_count: u32,
-    named_non_terminal_count: u32,
-    non_terminal_mapping: HashMap<&'rules ProductionRule<'rules>, Symbol>,
-    token_rules: &'rules [TokenRule<'rules>],
-    production_rules: &'rules [ProductionRule<'rules>],
-    rules: Vec<Rule>,
-}
-
-impl<'rules> GrammarBuilder<'rules> {
-    fn new(token_rules: &'rules [TokenRule], production_rules: &'rules [ProductionRule]) -> Self {
-        GrammarBuilder {
-            temp_count: 0,
-            named_non_terminal_count: 0,
-            non_terminal_mapping: HashMap::new(),
-            token_rules,
-            production_rules,
-            rules: Vec::new(),
-        }
-    }
-
-    fn get_temp_symbol(&mut self) -> Result<Symbol, GrammarError> {
-        let non_terminal = Symbol::NonTerminal(self.temp_count + self.named_non_terminal_count);
-        self.temp_count += 1;
-        Ok(non_terminal)
-    }
-
-    fn get_symbol_by_name(&mut self, symbol_name: &str) -> Result<Symbol, GrammarError> {
-        let matching_tokens: Vec<usize> = self
-            .token_rules
-            .iter()
-            .enumerate()
-            .filter(|(_, token)| token.token() == symbol_name)
-            .map(|(i, _)| i)
-            .collect();
-
-        let matching_prods: Vec<&ProductionRule> = self
-            .production_rules
-            .iter()
-            .filter(|token| token.name() == symbol_name)
-            .collect();
-        let match_count = matching_tokens.len() + matching_prods.len();
-        if match_count == 0 {
-            Err(GrammarError::MissingSymbol(symbol_name.to_string()))
-        } else {
-            if let Some(token) = matching_tokens.first() {
-                Ok(Symbol::Terminal(u32::try_from(*token)?))
-            } else {
-                let first_prod_rule = self
-                    .non_terminal_mapping
-                    .get(*matching_prods.first().unwrap());
-                let symbols_are_equal = matching_prods
-                    .iter()
-                    .map(|pr| self.non_terminal_mapping.get(pr))
-                    .all(|s| s == first_prod_rule);
-                if !symbols_are_equal {
-                    return Err(GrammarError::ConflictingRules {
-                        rule_name: symbol_name.to_string(),
-                        rule_matches: match_count,
-                    });
-                }
-                if let Some(nonterminal) = first_prod_rule {
-                    Ok(*nonterminal)
-                } else {
-                    let nonterminal =
-                        Symbol::NonTerminal(self.temp_count + self.named_non_terminal_count);
-                    for prod_rule in matching_prods {
-                        self.non_terminal_mapping.insert(prod_rule, nonterminal);
-                    }
-                    self.named_non_terminal_count += 1;
-                    Ok(nonterminal)
-                }
-            }
+impl<'rules> Grammar<'rules> {
+    pub fn new(
+        entry_symbol: Symbol,
+        entry_rule: Rule<'rules>,
+        rules: Vec<Rule<'rules>>,
+        tokens: BTreeMap<Symbol, &'rules str>,
+        productions: BTreeMap<Symbol, &'rules str>,
+        anonymous_non_terminals: Vec<Symbol>,
+    ) -> Self {
+        Grammar {
+            rules,
+            anonymous_non_terminals,
+            productions,
+            tokens,
+            entry_rule,
+            entry_symbol,
         }
     }
 }
 
 impl<'rules> Grammar<'rules> {
     pub fn from_rule_set(rule_set: &'rules RuleSet) -> Result<Self, GrammarError> {
-        let mut grammar_builder = GrammarBuilder::new(rule_set.tokens(), rule_set.productions());
-        for prod_rule in rule_set.productions() {
-            grammar_builder.add_production_rule(prod_rule)?;
-        }
-
-        let entry_symbol = grammar_builder.get_symbol_by_name(rule_set.entry().name())?;
-        let non_terminal_mapping: HashMap<Symbol, &ProductionRule> = grammar_builder
-            .non_terminal_mapping
-            .into_iter()
-            .map(|(a, b)| (b, a))
-            .collect();
-        let non_terminal_count =
-            grammar_builder.temp_count + grammar_builder.named_non_terminal_count;
-        // the entry rule is a pseudo-rule that has no LHS and maps to the entry symbol.
-        let entry_rule = Rule {
-            lhs: None,
-            rhs: vec![entry_symbol],
-        };
-        Ok(Grammar {
-            rules: grammar_builder.rules,
-            tokens: rule_set.tokens(),
-            non_terminal_mapping,
-            non_terminal_count,
-            entry_symbol,
-            entry_rule,
-        })
+        GrammarBuilder::from_rule_set(rule_set)?.build()
     }
 
-    pub fn non_terminals(&self) -> impl Iterator<Item = Symbol> {
-        (0..self.non_terminal_count).map(|i| Symbol::NonTerminal(i as u32))
+    pub fn non_terminals(&'rules self) -> impl Iterator<Item = Symbol> + 'rules {
+        self.productions
+            .keys()
+            .chain(self.anonymous_non_terminals.iter())
+            .map(|s| s.clone())
     }
 
-    pub fn terminals(&self) -> impl Iterator<Item = Symbol> {
-        (0..self.tokens.len()).map(|i| Symbol::Terminal(i as u32))
+    pub fn terminals(&'rules self) -> impl Iterator<Item = Symbol> + 'rules {
+        self.tokens.keys().map(|s| s.clone())
     }
 
-    pub fn symbols(&self) -> impl Iterator<Item = Symbol> {
+    pub fn symbols(&'rules self) -> impl Iterator<Item = Symbol> + 'rules {
         self.terminals().chain(self.non_terminals())
     }
 
     pub fn terminals_with_names(&self) -> impl Iterator<Item = (Symbol, &str)> {
         self.tokens
             .iter()
-            .enumerate()
-            .map(|(i, token_rule)| (Symbol::Terminal(i as u32), token_rule.token()))
+            .map(|(sym, token_rule)| (sym.clone(), *token_rule))
     }
 
     pub fn get_token_name(&self, index: u32) -> &str {
-        self.tokens[index as usize].token()
+        self.tokens
+            .get(&Symbol::Terminal(index))
+            .map(|r| r)
+            .unwrap()
     }
 
     pub fn get_production_name(&self, non_terminal: &Symbol) -> Option<&str> {
         if let Symbol::NonTerminal(_) = non_terminal {
-            if let Some(rule) = self.non_terminal_mapping.get(non_terminal) {
-                Some(rule.name())
+            if let Some(rule) = self.productions.get(non_terminal) {
+                Some(rule)
             } else {
                 None
             }
@@ -272,31 +210,18 @@ impl<'rules> Grammar<'rules> {
         &self.entry_symbol
     }
 
-    pub fn is_named_non_terminal(&self, symbol: Symbol) -> Option<&str> {
-        match symbol {
-            Symbol::NonTerminal(_) => {
-                if let Some(rule) = self.non_terminal_mapping.get(&symbol) {
-                    Some(rule.name())
-                } else {
-                    None
-                }
-            }
-            Symbol::Terminal(_) | Symbol::Epsilon | Symbol::End => None,
-        }
-    }
-
     pub fn get_symbol_name(&self, symbol: &Symbol) -> String {
         match symbol {
             Symbol::Terminal(terminal_index) => {
                 format!(
                     "{}({})",
-                    self.tokens[*terminal_index as usize].token(),
+                    self.tokens.get(&symbol).map(|r| r).unwrap(),
                     terminal_index
                 )
             }
             Symbol::NonTerminal(non_terminal_index) => {
-                if let Some(rule) = self.non_terminal_mapping.get(&symbol) {
-                    format!("{}({})", rule.name(), non_terminal_index)
+                if let Some(rule) = self.productions.get(&symbol) {
+                    format!("{}({})", rule, non_terminal_index)
                 } else {
                     format!("<anon>({})", non_terminal_index)
                 }
@@ -319,67 +244,5 @@ impl<'rules> Display for Grammar<'rules> {
         }
         write!(f, "}}")?;
         Ok(())
-    }
-}
-
-impl<'rules> GrammarBuilder<'rules> {
-    fn add_production_rule(
-        &mut self,
-        prod_rule: &'rules ProductionRule<'rules>,
-    ) -> Result<(), GrammarError> {
-        let symbol = self.get_symbol_by_name(prod_rule.name())?;
-        let produces = self.transform_pattern(prod_rule.pattern())?;
-        self.rules.push(Rule::new(symbol, produces)?);
-        Ok(())
-    }
-
-    fn transform_pattern(
-        &mut self,
-        pattern: &ProductionPattern,
-    ) -> Result<Vec<Symbol>, GrammarError> {
-        match pattern {
-            ProductionPattern::Sequence { elements } => {
-                let symbols: Result<Vec<Vec<Symbol>>, GrammarError> = elements
-                    .into_iter()
-                    .map(|pattern| self.transform_pattern(pattern))
-                    .collect();
-                let symbols: Vec<Symbol> = symbols?.into_iter().flat_map(|v| v).collect();
-                Ok(symbols)
-            }
-            ProductionPattern::Alternative { elements } => {
-                let alt_symbol = self.get_temp_symbol()?;
-                for elem in elements {
-                    let inner_produces = self.transform_pattern(elem)?;
-                    self.rules.push(Rule::new(alt_symbol, inner_produces)?);
-                }
-                Ok(vec![alt_symbol])
-            }
-            ProductionPattern::OneOrMany { inner } => {
-                let rep_symbol = self.get_temp_symbol()?;
-                let mut inner_produces = self.transform_pattern(inner)?;
-                self.rules
-                    .push(Rule::new(rep_symbol, inner_produces.clone())?);
-                inner_produces.push(rep_symbol);
-                self.rules.push(Rule::new(rep_symbol, inner_produces)?);
-                Ok(vec![rep_symbol])
-            }
-            ProductionPattern::ZeroOrMany { inner } => {
-                let rep_symbol = self.get_temp_symbol()?;
-                let mut inner_produces = self.transform_pattern(inner)?;
-                inner_produces.push(rep_symbol);
-                self.rules
-                    .push(Rule::new(rep_symbol, vec![Symbol::Epsilon])?);
-                self.rules.push(Rule::new(rep_symbol, inner_produces)?);
-                Ok(vec![rep_symbol])
-            }
-            ProductionPattern::Optional { inner } => {
-                let symbol = self.get_temp_symbol()?;
-                let inner_produces = self.transform_pattern(inner)?;
-                self.rules.push(Rule::new(symbol, inner_produces)?);
-                self.rules.push(Rule::new(symbol, vec![Symbol::Epsilon])?);
-                Ok(vec![symbol])
-            }
-            ProductionPattern::Rule { rule_name } => Ok(vec![self.get_symbol_by_name(rule_name)?]),
-        }
     }
 }

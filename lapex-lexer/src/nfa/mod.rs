@@ -2,7 +2,7 @@ use std::{collections::HashSet, iter::Peekable};
 
 use lapex_automaton::{Nfa, StateId};
 
-use lapex_input::{Characters, Pattern, TokenPattern, TokenRule};
+use lapex_input::{Characters, Pattern, Spanned, TokenPattern, TokenRule};
 
 use crate::alphabet::Alphabet;
 
@@ -179,16 +179,16 @@ fn build_nfa_from_pattern<'rules>(
 
 pub fn generate_nfa<'rules>(
     alphabet: &Alphabet,
-    rules: &'rules [TokenRule],
+    rules: &'rules [Spanned<TokenRule>],
 ) -> (StateId, Nfa<&'rules TokenRule<'rules>, usize>) {
-    let mut nfa = Nfa::new();
+    let mut nfa: Nfa<&'rules TokenRule<'rules>, usize> = Nfa::new();
 
     let start = nfa.add_intermediate_state();
     for rule in rules {
         let rule_start = nfa.add_intermediate_state();
-        let rule_end = nfa.add_accepting_state(rule);
+        let rule_end = nfa.add_accepting_state(&rule.inner);
         nfa.add_epsilon_transition(start, rule_start);
-        match rule.pattern() {
+        match &rule.inner.pattern {
             TokenPattern::Literal { characters } => build_nfa_from_pattern(
                 rule_start,
                 rule_end,

@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use lapex_input::{
     Characters, EntryRule, LapexInputParser, LapexParsingError, Pattern, ProductionPattern,
-    ProductionRule, Rule, RuleSet, TokenPattern, TokenRule,
+    ProductionRule, RuleSet, Spanned, TokenPattern, TokenRule,
 };
 use nom::character::complete::{multispace0, multispace1};
 use nom::{
@@ -292,6 +292,14 @@ fn parse_entry_rule(input: &[u8]) -> IResult<&[u8], EntryRule> {
         },
     ))
 }
+
+#[derive(Debug)]
+pub enum Rule<'src> {
+    TokenRule(TokenRule<'src>),
+    ProductionRule(ProductionRule<'src>),
+    EntryRule(EntryRule<'src>),
+}
+
 fn parse_rule(input: &[u8]) -> IResult<&[u8], Rule> {
     alt((
         map(parse_token_rule, Rule::TokenRule),
@@ -328,8 +336,8 @@ fn parse_lapex_file(input: &[u8]) -> Result<RuleSet, LapexParsingError> {
     let mut entry_rules = Vec::new();
     for rule in rules {
         match rule {
-            Rule::TokenRule(tr) => token_rules.push(tr),
-            Rule::ProductionRule(pr) => prod_rules.push(pr),
+            Rule::TokenRule(tr) => token_rules.push(Spanned::zero(tr)),
+            Rule::ProductionRule(pr) => prod_rules.push(Spanned::zero(pr)),
             Rule::EntryRule(er) => entry_rules.push(er),
         }
     }
@@ -339,11 +347,11 @@ fn parse_lapex_file(input: &[u8]) -> Result<RuleSet, LapexParsingError> {
     if entry_rules.len() != 1 {
         return Err(LapexParsingError::TooManyEntryRules);
     }
-    let rule_set = RuleSet {
-        entry_rule: entry_rules.remove(0),
+    let rule_set = RuleSet::new(
+        Spanned::zero(entry_rules.remove(0)),
         token_rules,
-        production_rules: prod_rules,
-    };
+        prod_rules,
+    );
     Ok(rule_set)
 }
 

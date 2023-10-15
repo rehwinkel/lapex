@@ -4,7 +4,7 @@ use std::ops::RangeInclusive;
 use lapex_automaton::{AutomatonState, Dfa};
 
 use lapex_codegen::{GeneratedCodeWriter, Template};
-use lapex_input::TokenRule;
+use lapex_input::{Spanned, TokenRule};
 use lapex_lexer::LexerCodeGen;
 
 use crate::CppLexerCodeGen;
@@ -75,7 +75,7 @@ impl<'lexer> LexerCodeWriter<'lexer> {
             if let AutomatonState::Accepting(accept) = node {
                 writeln!(output, "// ACCEPT: {:?}", accept)?;
                 writeln!(output, "this->end_pos = this->position;")?;
-                writeln!(output, "return TokenType::TK_{};", accept.token())?;
+                writeln!(output, "return TokenType::TK_{};", accept.name)?;
             } else {
                 writeln!(output, "return TokenType::TK_ERR;")?;
             }
@@ -103,11 +103,11 @@ impl<'lexer> LexerCodeWriter<'lexer> {
 struct TokensCodeWriter<'lexer> {
     tokens_header_template: Template<'static>,
     tokens_impl_template: Template<'static>,
-    rules: &'lexer [TokenRule<'lexer>],
+    rules: &'lexer [Spanned<TokenRule<'lexer>>],
 }
 
 impl<'lexer> TokensCodeWriter<'lexer> {
-    fn new(rules: &'lexer [TokenRule]) -> Self {
+    fn new(rules: &'lexer [Spanned<TokenRule>]) -> Self {
         let tokens_header_template = Template::new(include_str!("tokens.h.tpl"));
         let tokens_impl_template = Template::new(include_str!("tokens.cpp.tpl"));
         TokensCodeWriter {
@@ -119,7 +119,7 @@ impl<'lexer> TokensCodeWriter<'lexer> {
 
     fn write_token_enum_variants(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         for rule in self.rules {
-            writeln!(output, "TK_{},", rule.token())?;
+            writeln!(output, "TK_{},", rule.inner.name)?;
         }
         Ok(())
     }
@@ -134,8 +134,8 @@ impl<'lexer> TokensCodeWriter<'lexer> {
         writeln!(output, "case TokenType::TK_EOF:")?;
         writeln!(output, "return \"<EOF>\";")?;
         for rule in self.rules {
-            writeln!(output, "case TokenType::TK_{}:", rule.token())?;
-            writeln!(output, "return \"{}\";", rule.token())?;
+            writeln!(output, "case TokenType::TK_{}:", rule.inner.name)?;
+            writeln!(output, "return \"{}\";", rule.inner.name)?;
         }
         writeln!(output, "default:")?;
         writeln!(output, "return nullptr;")?;
@@ -160,7 +160,7 @@ impl<'lexer> TokensCodeWriter<'lexer> {
 impl LexerCodeGen for CppLexerCodeGen {
     fn generate_lexer(
         &self,
-        _rules: &[TokenRule],
+        _rules: &[Spanned<TokenRule>],
         alphabet: &[RangeInclusive<u32>],
         dfa: &Dfa<&TokenRule, usize>,
         gen: &mut GeneratedCodeWriter,
@@ -172,7 +172,7 @@ impl LexerCodeGen for CppLexerCodeGen {
             .unwrap();
     }
 
-    fn generate_tokens(&self, rules: &[TokenRule], gen: &mut GeneratedCodeWriter) {
+    fn generate_tokens(&self, rules: &[Spanned<TokenRule>], gen: &mut GeneratedCodeWriter) {
         let code_writer = TokensCodeWriter::new(rules);
         gen.generate_code("tokens.h", |output| code_writer.write_tokens_header(output))
             .unwrap();

@@ -36,7 +36,7 @@ impl<'parser> CodeWriter<'parser> {
 
     fn write_visitor_methods(&self, output: &mut dyn Write) -> Result<(), Error> {
         for non_terminal in self.grammar.non_terminals() {
-            if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
+            if let Some(name) = self.grammar.get_production_name(&non_terminal) {
                 writeln!(output, "virtual void enter_{}() = 0;", name)?;
                 writeln!(output, "virtual void exit_{}() = 0;", name)?;
             }
@@ -51,7 +51,7 @@ impl<'parser> CodeWriter<'parser> {
     ) -> Result<(), Error> {
         writeln!(output, "switch (non_terminal) {{")?;
         for non_terminal in self.grammar.non_terminals() {
-            if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
+            if let Some(name) = self.grammar.get_production_name(&non_terminal) {
                 write!(output, "case NonTerminalType::")?;
                 self.write_non_terminal_enum_name(non_terminal, output)?;
                 writeln!(output, ":")?;
@@ -71,7 +71,7 @@ impl<'parser> CodeWriter<'parser> {
         non_terminal: Symbol,
         output: &mut dyn Write,
     ) -> Result<(), Error> {
-        if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
+        if let Some(name) = self.grammar.get_production_name(&non_terminal) {
             write!(output, "NT_{}", name.to_uppercase())?;
         } else {
             if let Symbol::NonTerminal(non_terminal_index) = non_terminal {

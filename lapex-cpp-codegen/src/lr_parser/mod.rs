@@ -13,19 +13,19 @@ mod action_goto;
 
 use crate::CppLRParserCodeGen;
 
-struct CodeWriter<'parser> {
+struct CodeWriter<'parser, 'rules> {
     grammar: &'parser Grammar<'parser>,
-    parser_table: &'parser ActionGotoTable<'parser>,
+    parser_table: &'parser ActionGotoTable<'parser, 'rules>,
     parser_header_template: Template<'static>,
     parser_impl_header_template: Template<'static>,
     parser_impl_template: Template<'static>,
     visitor_header_template: Template<'static>,
-    rule_index_map: HashMap<*const Rule, usize>,
-    rules_by_non_terminal: HashMap<Symbol, Vec<&'parser Rule>>,
+    rule_index_map: HashMap<*const Rule<'rules>, usize>,
+    rules_by_non_terminal: HashMap<Symbol, Vec<&'parser Rule<'rules>>>,
 }
 
-impl<'parser> CodeWriter<'parser> {
-    fn new(grammar: &'parser Grammar<'parser>, parser_table: &'parser ActionGotoTable) -> Self {
+impl<'grammar: 'rules, 'rules> CodeWriter<'grammar, 'rules> {
+    fn new(grammar: &'grammar Grammar<'grammar>, parser_table: &'grammar ActionGotoTable) -> Self {
         let parser_header_template = Template::new(include_str!("parser.h.tpl"));
         let parser_impl_header_template = Template::new(include_str!("parser_impl.h.tpl"));
         let parser_impl_template = Template::new(include_str!("parser.cpp.tpl"));
@@ -63,7 +63,7 @@ impl<'parser> CodeWriter<'parser> {
         non_terminal: Symbol,
         output: &mut dyn Write,
     ) -> Result<(), Error> {
-        if let Some(name) = self.grammar.is_named_non_terminal(non_terminal) {
+        if let Some(name) = self.grammar.get_production_name(&non_terminal) {
             write!(output, "NT_{}", name.to_uppercase())?;
         } else {
             if let Symbol::NonTerminal(non_terminal_index) = non_terminal {
@@ -111,7 +111,7 @@ impl<'parser> CodeWriter<'parser> {
     fn get_non_terminal_name(&self, non_terminal: &Symbol) -> String {
         let non_terminal_name = self
             .grammar
-            .is_named_non_terminal(*non_terminal)
+            .get_production_name(non_terminal)
             .map(|s| String::from(s))
             .unwrap_or_else(|| {
                 if let Symbol::NonTerminal(index) = non_terminal {
@@ -222,7 +222,7 @@ impl<'parser> CodeWriter<'parser> {
     }
 }
 
-fn get_rule_from_pointer(rule: &*const Rule) -> &Rule {
+fn get_rule_from_pointer<'a, 'rules>(rule: &*const Rule<'rules>) -> &'a Rule<'rules> {
     // We created the hashmap from a known list of rules. The rule pointers are derived from the grammar rules, and the grammar outlives this struct.
     // Therefore, this operation is safe.
     let rule = unsafe { rule.as_ref() }.unwrap();

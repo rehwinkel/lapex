@@ -15,7 +15,8 @@ token PIPE = "|";
 token IDENT = /[a-zA-Z][a-zA-Z0-9_]*/;
 token STRING = /"([^"\\\n]|\\.)*"/;
 token REGEX = /\/([^\/\\\n]|\\.)*\//;
-token WHITESPACE = /[ \t\n]+/;
+token WHITESPACE = /[ \t]+/;
+token NEWLINE = /[\n]/;
 
 entry rules;
 prod rules = rule;
