@@ -6,7 +6,7 @@ use std::{
     num::TryFromIntError,
 };
 
-use lapex_input::{ProductionRule, RuleSet, SourceSpan};
+use lapex_input::{ProductionRule, RuleSet, SourceSpan, Spanned};
 
 use crate::grammar_builder::GrammarBuilder;
 
@@ -44,16 +44,20 @@ pub enum Symbol {
 pub struct Rule<'rules> {
     lhs: Option<u32>,
     rhs: Vec<Symbol>,
-    rule: &'rules ProductionRule<'rules>,
+    rule: &'rules Spanned<ProductionRule<'rules>>,
 }
 
 impl<'rules> Rule<'rules> {
-    pub fn entry(entry_symbol: Symbol, rule: &'rules ProductionRule<'rules>) -> Self {
+    pub fn entry(entry_symbol: Symbol, rule: &'rules Spanned<ProductionRule<'rules>>) -> Self {
         Rule {
             lhs: None,
             rhs: vec![entry_symbol],
             rule,
         }
+    }
+
+    pub fn rule(&self) -> &'rules Spanned<ProductionRule<'rules>> {
+        self.rule
     }
 }
 
@@ -66,7 +70,7 @@ impl<'rules> Rule<'rules> {
     pub fn new(
         lhs: Symbol,
         rhs: Vec<Symbol>,
-        rule: &'rules ProductionRule,
+        rule: &'rules Spanned<ProductionRule<'rules>>,
     ) -> Result<Self, GrammarError> {
         let non_terminal_index = match lhs {
             Symbol::NonTerminal(i) => Some(i),

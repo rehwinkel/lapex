@@ -1,5 +1,7 @@
 use std::{fmt::Display, hash::Hash};
 
+use lapex_input::{ProductionRule, Spanned};
+
 use crate::grammar::{Grammar, Rule, Symbol};
 
 #[derive(Debug, Clone)]
@@ -74,6 +76,10 @@ impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
 
     pub fn lookahead(&self) -> &[Symbol; N] {
         &self.lookahead
+    }
+
+    pub fn production(&self) -> &'grammar Spanned<ProductionRule<'rules>> {
+        self.rule.rule()
     }
 }
 

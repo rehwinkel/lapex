@@ -26,22 +26,22 @@ struct TokenData<'src> {
 
 #[derive(Debug)]
 enum Rule<'src> {
-    TokenRule(Spanned<TokenRule<'src>>),
-    ProductionRule(Spanned<ProductionRule<'src>>),
-    EntryRule(Spanned<EntryRule<'src>>),
+    TokenRule(TokenRule<'src>),
+    ProductionRule(ProductionRule<'src>),
+    EntryRule(EntryRule<'src>),
 }
 
 #[derive(Debug)]
 enum Ast<'src> {
-    Token(TokenData<'src>),
+    Token(&'src str),
     Rule(Rule<'src>),
     Pattern(ProductionPattern<'src>),
-    Rules(Vec<Rule<'src>>),
+    Rules(Vec<Spanned<Rule<'src>>>),
     Precedence(Option<u16>),
 }
 
 struct LapexAstVisitor<'stack, 'src> {
-    stack: &'stack mut Vec<Ast<'src>>,
+    stack: &'stack mut Vec<Spanned<Ast<'src>>>,
 }
 
 fn get_unescaped_chars(text: &str) -> Vec<char> {
@@ -143,7 +143,8 @@ fn get_regex_pattern(text: &str) -> Result<Pattern, RegexConversionError> {
 
 impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 'src> {
     fn shift(&mut self, _token: TokenType, data: TokenData<'src>) {
-        self.stack.push(Ast::Token(data));
+        self.stack
+            .push(Spanned::new(data.span, Ast::Token(data.text)));
     }
 
     fn reduce_unary_1(&mut self) {
@@ -163,72 +164,99 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
     }
 
     fn reduce_prod_rule(&mut self) {
-        self.stack.pop();
-        let rhs = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
+        let semi_span = self.stack.pop().unwrap().span;
+        let rhs = if let Some(Ast::Pattern(pattern)) = self.stack.pop().map(|s| s.inner) {
             pattern
         } else {
             panic!("Stack is broken")
         };
         self.stack.pop();
-        let name = if let Some(Ast::Token(name)) = self.stack.pop() {
-            name.text
+        let name = if let Some(Ast::Token(name)) = self.stack.pop().map(|s| s.inner) {
+            name
         } else {
             panic!("Stack is broken")
         };
-        self.stack.pop();
-        self.stack
-            .push(Ast::Rule(Rule::ProductionRule(Spanned::zero(
-                ProductionRule { name, pattern: rhs },
-            ))));
+        let prod_span = self.stack.pop().unwrap().span;
+        self.stack.push(Spanned::between(
+            prod_span,
+            semi_span,
+            Ast::Rule(Rule::ProductionRule(ProductionRule {
+                name: name,
+                pattern: rhs,
+            })),
+        ));
     }
 
     fn reduce_repetition_zero(&mut self) {
-        self.stack.pop();
-        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
-            pattern
+        let asterisk_span = self.stack.pop().unwrap().span;
+        let (prod_span, pattern) = if let Some(Spanned {
+            inner: Ast::Pattern(pattern),
+            span,
+        }) = self.stack.pop()
+        {
+            (span, pattern)
         } else {
             panic!("Stack is broken")
         };
-        self.stack.push(Ast::Pattern(ProductionPattern::ZeroOrMany {
-            inner: Box::new(pattern),
-        }))
+        self.stack.push(Spanned::between(
+            prod_span,
+            asterisk_span,
+            Ast::Pattern(ProductionPattern::ZeroOrMany {
+                inner: Box::new(pattern),
+            }),
+        ))
     }
 
     fn reduce_item_1(&mut self) {
-        let name = if let Some(Ast::Token(name)) = self.stack.pop() {
-            name.text
-        } else {
-            panic!("Stack is broken")
-        };
-        self.stack
-            .push(Ast::Pattern(ProductionPattern::Rule { rule_name: name }))
+        let pattern = self.stack.pop().unwrap().map(|s| {
+            if let Ast::Token(name) = s {
+                Ast::Pattern(ProductionPattern::Rule { rule_name: name })
+            } else {
+                panic!("Stack is broken")
+            }
+        });
+        self.stack.push(pattern)
     }
 
     fn reduce_item_2(&mut self) {
-        self.stack.pop();
-        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
+        let end = self.stack.pop().unwrap().span;
+        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop().map(|s| s.inner) {
             pattern
         } else {
             panic!("Stack is broken")
         };
-        self.stack.pop();
-        self.stack.push(Ast::Pattern(pattern))
+        let start = self.stack.pop().unwrap().span;
+        self.stack
+            .push(Spanned::between(start, end, Ast::Pattern(pattern)))
     }
 
     fn reduce_concatenation_1(&mut self) {
-        let mut elements = match self.stack.pop() {
-            Some(Ast::Pattern(ProductionPattern::Sequence { elements })) => elements,
-            Some(Ast::Pattern(pattern)) => vec![pattern],
+        let (mut elements, concat_span) = match self.stack.pop() {
+            Some(Spanned {
+                inner: Ast::Pattern(ProductionPattern::Sequence { elements }),
+                span,
+            }) => (elements, span),
+            Some(Spanned {
+                inner: Ast::Pattern(pattern),
+                span,
+            }) => (vec![pattern], span),
             _ => panic!("Stack is broken"),
         };
-        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
-            pattern
+        let (pattern, unary_span) = if let Some(Spanned {
+            inner: Ast::Pattern(pattern),
+            span,
+        }) = self.stack.pop()
+        {
+            (pattern, span)
         } else {
             panic!("Stack is broken")
         };
         elements.insert(0, pattern);
-        self.stack
-            .push(Ast::Pattern(ProductionPattern::Sequence { elements }))
+        self.stack.push(Spanned::between(
+            unary_span,
+            concat_span,
+            Ast::Pattern(ProductionPattern::Sequence { elements }),
+        ))
     }
 
     fn reduce_concatenation_2(&mut self) {
@@ -240,101 +268,127 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
     }
 
     fn reduce_token_rule(&mut self) {
-        self.stack.pop();
-        let rhs = if let Some(Ast::Token(rhs)) = self.stack.pop() {
-            rhs.text
+        let semi_span = self.stack.pop().unwrap().span;
+        let rhs = if let Some(Ast::Token(rhs)) = self.stack.pop().map(|s| s.inner) {
+            rhs
         } else {
             panic!("Stack is broken")
         };
         self.stack.pop();
-        let precedence = if let Some(Ast::Precedence(prec)) = self.stack.pop() {
+        let precedence = if let Some(Ast::Precedence(prec)) = self.stack.pop().map(|s| s.inner) {
             prec
         } else {
             panic!("Stack is broken")
         };
-        let name = if let Some(Ast::Token(name)) = self.stack.pop() {
-            name.text
+        let name = if let Some(Ast::Token(name)) = self.stack.pop().map(|s| s.inner) {
+            name
         } else {
             panic!("Stack is broken")
         };
-        self.stack.pop();
-        match rhs.chars().next() {
-            Some('"') => {
-                self.stack
-                    .push(Ast::Rule(Rule::TokenRule(Spanned::zero(TokenRule {
-                        name,
-                        precedence,
-                        pattern: lapex_input::TokenPattern::Literal {
-                            characters: get_unescaped_chars(rhs),
-                        },
-                    }))));
-            }
-            Some('/') => {
-                self.stack
-                    .push(Ast::Rule(Rule::TokenRule(Spanned::zero(TokenRule {
-                        name,
-                        precedence,
-                        pattern: TokenPattern::Pattern {
-                            pattern: get_regex_pattern(rhs).unwrap(),
-                        },
-                    }))));
-            }
+        let token_span = self.stack.pop().unwrap().span;
+        let pattern = match rhs.chars().next() {
+            Some('"') => TokenPattern::Literal {
+                characters: get_unescaped_chars(rhs),
+            },
+            Some('/') => TokenPattern::Pattern {
+                pattern: get_regex_pattern(rhs).unwrap(),
+            },
             _ => unreachable!(),
-        }
+        };
+        self.stack.push(Spanned::between(
+            token_span,
+            semi_span,
+            Ast::Rule(Rule::TokenRule(TokenRule {
+                name,
+                precedence,
+                pattern,
+            })),
+        ));
     }
 
     fn reduce_option(&mut self) {
-        self.stack.pop();
-        let pattern = match self.stack.pop() {
-            Some(Ast::Pattern(pattern)) => pattern,
-            on_stack => panic!("Stack is broken: {:?}", on_stack),
+        let que_span = self.stack.pop().unwrap().span;
+        let (pattern, span) = if let Some(Spanned {
+            inner: Ast::Pattern(pattern),
+            span,
+        }) = self.stack.pop()
+        {
+            (pattern, span)
+        } else {
+            panic!("Stack is broken")
         };
-        self.stack.push(Ast::Pattern(ProductionPattern::Optional {
-            inner: Box::new(pattern),
-        }))
+        self.stack.push(Spanned::between(
+            span,
+            que_span,
+            Ast::Pattern(ProductionPattern::Optional {
+                inner: Box::new(pattern),
+            }),
+        ))
     }
 
     fn reduce_entry_rule(&mut self) {
-        self.stack.pop();
-        let name = if let Some(Ast::Token(name)) = self.stack.pop() {
-            name.text
+        let semi_span = self.stack.pop().unwrap().span;
+        let name = if let Some(Ast::Token(name)) = self.stack.pop().map(|s| s.inner) {
+            name
         } else {
             panic!("Stack is broken")
         };
-        self.stack.pop();
-        self.stack
-            .push(Ast::Rule(Rule::EntryRule(Spanned::zero(EntryRule {
-                name,
-            }))));
+        let entry_span = self.stack.pop().unwrap().span;
+        self.stack.push(Spanned::between(
+            entry_span,
+            semi_span,
+            Ast::Rule(Rule::EntryRule(EntryRule { name })),
+        ));
     }
 
     fn reduce_repetition_one(&mut self) {
-        self.stack.pop();
-        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
-            pattern
+        let plus_span = self.stack.pop().unwrap().span;
+        let (pattern, span) = if let Some(Spanned {
+            inner: Ast::Pattern(pattern),
+            span,
+        }) = self.stack.pop()
+        {
+            (pattern, span)
         } else {
             panic!("Stack is broken")
         };
-        self.stack.push(Ast::Pattern(ProductionPattern::OneOrMany {
-            inner: Box::new(pattern),
-        }))
+        self.stack.push(Spanned::between(
+            span,
+            plus_span,
+            Ast::Pattern(ProductionPattern::OneOrMany {
+                inner: Box::new(pattern),
+            }),
+        ))
     }
 
     fn reduce_alternative_1(&mut self) {
-        let mut elements = match self.stack.pop() {
-            Some(Ast::Pattern(ProductionPattern::Alternative { elements })) => elements,
-            Some(Ast::Pattern(pattern)) => vec![pattern],
+        let (mut elements, alt_span) = match self.stack.pop() {
+            Some(Spanned {
+                inner: Ast::Pattern(ProductionPattern::Alternative { elements }),
+                span,
+            }) => (elements, span),
+            Some(Spanned {
+                inner: Ast::Pattern(pattern),
+                span,
+            }) => (vec![pattern], span),
             _ => panic!("Stack is broken"),
         };
         self.stack.pop();
-        let pattern = if let Some(Ast::Pattern(pattern)) = self.stack.pop() {
-            pattern
+        let (pattern, concat_span) = if let Some(Spanned {
+            inner: Ast::Pattern(pattern),
+            span,
+        }) = self.stack.pop()
+        {
+            (pattern, span)
         } else {
             panic!("Stack is broken")
         };
         elements.push(pattern);
-        self.stack
-            .push(Ast::Pattern(ProductionPattern::Alternative { elements }))
+        self.stack.push(Spanned::between(
+            concat_span,
+            alt_span,
+            Ast::Pattern(ProductionPattern::Alternative { elements }),
+        ))
     }
 
     fn reduce_alternative_2(&mut self) {
@@ -354,27 +408,35 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
     }
 
     fn reduce_rules_1(&mut self) {
-        let rule = if let Some(Ast::Rule(rule)) = self.stack.pop() {
-            rule
+        let rule = if let Some(Spanned {
+            inner: Ast::Rule(rule),
+            span,
+        }) = self.stack.pop()
+        {
+            Spanned::new(span, rule)
         } else {
             panic!("Stack is broken")
         };
-        self.stack.push(Ast::Rules(vec![rule]))
+        self.stack.push(Spanned::zero(Ast::Rules(vec![rule])))
     }
 
     fn reduce_rules_2(&mut self) {
-        let mut rules = if let Some(Ast::Rules(rules)) = self.stack.pop() {
+        let mut rules = if let Some(Ast::Rules(rules)) = self.stack.pop().map(|s| s.inner) {
             rules
         } else {
             panic!("Stack is broken")
         };
-        let rule = if let Some(Ast::Rule(rule)) = self.stack.pop() {
-            rule
+        let rule = if let Some(Spanned {
+            inner: Ast::Rule(rule),
+            span,
+        }) = self.stack.pop()
+        {
+            Spanned::new(span, rule)
         } else {
             panic!("Stack is broken")
         };
         rules.push(rule);
-        self.stack.push(Ast::Rules(rules))
+        self.stack.push(Spanned::zero(Ast::Rules(rules)))
     }
 
     fn reduce_string_or_regex_1(&mut self) {
@@ -386,14 +448,18 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
     }
 
     fn reduce_precedence(&mut self) {
-        self.stack.pop();
-        let precedence: u16 = if let Some(Ast::Token(digit)) = self.stack.pop() {
-            digit.text.parse().unwrap()
+        let end = self.stack.pop().unwrap().span;
+        let precedence: u16 = if let Some(Ast::Token(digit)) = self.stack.pop().map(|s| s.inner) {
+            digit.parse().unwrap()
         } else {
             panic!("Stack is broken")
         };
-        self.stack.pop();
-        self.stack.push(Ast::Precedence(Some(precedence)));
+        let start = self.stack.pop().unwrap().span;
+        self.stack.push(Spanned::between(
+            start,
+            end,
+            Ast::Precedence(Some(precedence)),
+        ));
     }
 
     fn reduce_anon24_1(&mut self) {
@@ -401,7 +467,7 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
     }
 
     fn reduce_anon24_2(&mut self) {
-        self.stack.push(Ast::Precedence(None));
+        self.stack.push(Spanned::zero(Ast::Precedence(None)));
     }
 }
 
@@ -418,10 +484,7 @@ impl LapexInputParser for GeneratedLapexInputParser {
         let mut col: u16 = 1;
         let mut line: u16 = 1;
         let token_fun = || {
-            let start_line = line;
-            let start_col = col;
             let mut next_tk = lexer.next().unwrap();
-            col += lexer.slice().len() as u16;
             loop {
                 match next_tk {
                     TokenType::TkNewline => {
@@ -430,30 +493,32 @@ impl LapexInputParser for GeneratedLapexInputParser {
                         line += 1;
                     }
                     TokenType::TkWhitespace => {
-                        next_tk = lexer.next().unwrap();
                         col += lexer.slice().len() as u16;
+                        next_tk = lexer.next().unwrap();
                     }
                     _ => break,
                 }
             }
-            return (
-                next_tk,
-                TokenData {
-                    text: lexer.slice(),
-                    span: SourceSpan {
-                        start: SourcePos {
-                            line: start_line,
-                            col: start_col,
-                        },
-                        end: SourcePos { line, col },
+            let start_line = line;
+            let start_col = col;
+            col += lexer.slice().len() as u16;
+
+            let token_data = TokenData {
+                text: lexer.slice(),
+                span: SourceSpan {
+                    start: SourcePos {
+                        line: start_line,
+                        col: start_col,
                     },
+                    end: SourcePos { line, col },
                 },
-            );
+            };
+            return (next_tk, token_data);
         };
         let mut parser = Parser::new(token_fun, visitor);
         parser.parse().expect("error: parsing");
         assert_eq!(stack.len(), 1);
-        let rules = if let Ast::Rules(rules) = stack.pop().unwrap() {
+        let rules = if let Ast::Rules(rules) = stack.pop().unwrap().inner {
             rules
         } else {
             panic!("Stack is broken")
@@ -463,10 +528,11 @@ impl LapexInputParser for GeneratedLapexInputParser {
         let mut entry_rules = Vec::new();
 
         for rule in rules {
-            match rule {
-                Rule::TokenRule(token_rule) => token_rules.push(token_rule),
-                Rule::ProductionRule(prod_rule) => prod_rules.push(prod_rule),
-                Rule::EntryRule(entry_rule) => entry_rules.push(entry_rule),
+            let span = rule.span;
+            match rule.inner {
+                Rule::TokenRule(token_rule) => token_rules.push(Spanned::new(span, token_rule)),
+                Rule::ProductionRule(prod_rule) => prod_rules.push(Spanned::new(span, prod_rule)),
+                Rule::EntryRule(entry_rule) => entry_rules.push(Spanned::new(span, entry_rule)),
             }
         }
 

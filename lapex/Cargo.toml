@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-color-eyre = { version = "0.6", default-features = false }
 clap = { version = "4.3.16", features = ["derive"] }
 lapex-automaton = { path = "../lapex-automaton" }
 lapex-lexer = { path = "../lapex-lexer" }
@@ -13,3 +12,4 @@ lapex-input = { path = "../lapex-input" }
 lapex-cpp-codegen = { path = "../lapex-cpp-codegen" }
 lapex-rust-codegen = { path = "../lapex-rust-codegen" }
 lapex-codegen = { path = "../lapex-codegen" }
+owo-colors = "3.2.0"

@@ -97,7 +97,7 @@ impl<'rules> GrammarBuilder<'rules> {
 
     pub fn build(mut self) -> Result<Grammar<'rules>, GrammarError> {
         for rule in &self.rule_set.production_rules {
-            self.add_production_rule(&rule.inner)?;
+            self.add_production_rule(&rule)?;
         }
         let entry_name = self.rule_set.entry_rule.inner.name;
         let entry_symbol = self.get_symbol_by_name(entry_name)?;
@@ -108,7 +108,7 @@ impl<'rules> GrammarBuilder<'rules> {
             .find(|r| r.inner.name == entry_name)
             .ok_or(GrammarError::MissingSymbol(String::from(entry_name)))?;
         // the entry rule is a pseudo-rule that has no LHS and maps to the entry symbol.
-        let entry_rule = Rule::entry(entry_symbol, &entry_production.inner);
+        let entry_rule = Rule::entry(entry_symbol, &entry_production);
         Ok(Grammar::new(
             entry_symbol,
             entry_rule,
@@ -123,10 +123,10 @@ impl<'rules> GrammarBuilder<'rules> {
 impl<'rules> GrammarBuilder<'rules> {
     fn add_production_rule(
         &mut self,
-        prod_rule: &'rules ProductionRule<'rules>,
+        prod_rule: &'rules Spanned<ProductionRule<'rules>>,
     ) -> Result<(), GrammarError> {
-        let symbol = self.get_symbol_by_name(prod_rule.name)?;
-        let produces = self.transform_pattern(&prod_rule.pattern, prod_rule)?;
+        let symbol = self.get_symbol_by_name(prod_rule.inner.name)?;
+        let produces = self.transform_pattern(&prod_rule.inner.pattern, prod_rule)?;
         self.rules.push(Rule::new(symbol, produces, prod_rule)?);
         Ok(())
     }
@@ -134,7 +134,7 @@ impl<'rules> GrammarBuilder<'rules> {
     fn transform_pattern(
         &mut self,
         pattern: &ProductionPattern,
-        parent_rule: &'rules ProductionRule,
+        parent_rule: &'rules Spanned<ProductionRule<'rules>>,
     ) -> Result<Vec<Symbol>, GrammarError> {
         match pattern {
             ProductionPattern::Sequence { elements } => {

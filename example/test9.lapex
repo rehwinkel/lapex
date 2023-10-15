@@ -1,6 +1,5 @@
 token A = "a";
 token B = "b";
-token C = "c";
 
 entry bla;
 prod bla = bla A bla;

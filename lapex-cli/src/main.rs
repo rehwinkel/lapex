@@ -24,10 +24,9 @@ struct CommandLine {
     target: String,
 }
 
-fn main() -> color_eyre::Result<()> {
-    color_eyre::install()?;
+fn main() {
     let cli = CommandLine::parse();
-    generate(
+    let result = generate(
         !cli.no_lexer,
         cli.algorithm,
         cli.table,
@@ -35,5 +34,16 @@ fn main() -> color_eyre::Result<()> {
         Path::new(&cli.target),
         cli.language,
         lapex_input_gen::GeneratedLapexInputParser {},
-    )
+    );
+    match result {
+        Err(errors) => {
+            for (i, error) in errors.iter().enumerate() {
+                eprintln!("{}", error);
+                if i + 1 < errors.len() {
+                    eprintln!();
+                }
+            }
+        }
+        _ => {}
+    }
 }

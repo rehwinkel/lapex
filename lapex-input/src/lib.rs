@@ -12,6 +12,36 @@ pub struct SourceSpan {
     pub end: SourcePos,
 }
 
+impl SourcePos {
+    fn offset(&self, text: &str) -> Option<usize> {
+        let mut line = 1;
+        let mut col = 1;
+        for (offset, ch) in text.char_indices() {
+            if line == self.line && col == self.col {
+                return Some(offset);
+            }
+            match ch {
+                '\n' => {
+                    line += 1;
+                    col = 1;
+                }
+                _ => {
+                    col += 1;
+                }
+            }
+        }
+        (line == self.line && col == self.col).then_some(text.len())
+    }
+}
+
+impl SourceSpan {
+    pub fn substring<'a>(&self, text: &'a str) -> Option<&'a str> {
+        let start = self.start.offset(text)?;
+        let end = self.end.offset(text)?;
+        Some(&text[start..end])
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
 pub struct Spanned<T> {
     pub span: SourceSpan,
@@ -26,6 +56,28 @@ impl<T> Spanned<T> {
                 end: SourcePos { line: 0, col: 0 },
             },
             inner,
+        }
+    }
+    pub fn new(span: SourceSpan, inner: T) -> Self {
+        Spanned { span, inner }
+    }
+    pub fn between(start: SourceSpan, end: SourceSpan, inner: T) -> Self {
+        Spanned {
+            span: SourceSpan {
+                start: start.start,
+                end: end.end,
+            },
+            inner,
+        }
+    }
+
+    pub fn map<F, V>(self, mapping: F) -> Spanned<V>
+    where
+        F: FnOnce(T) -> V,
+    {
+        Spanned {
+            span: self.span,
+            inner: mapping(self.inner),
         }
     }
 }

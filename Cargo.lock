@@ -267,7 +267,6 @@ name = "lapex"
 version = "0.1.0"
 dependencies = [
  "clap",
- "color-eyre",
  "lapex-automaton",
  "lapex-codegen",
  "lapex-cpp-codegen",
@@ -275,6 +274,7 @@ dependencies = [
  "lapex-lexer",
  "lapex-parser",
  "lapex-rust-codegen",
+ "owo-colors",
 ]
 
 [[package]]
