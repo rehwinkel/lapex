@@ -8,7 +8,7 @@ use std::{
 use clap::ValueEnum;
 use lapex_codegen::GeneratedCodeWriter;
 use lapex_cpp_codegen::{CppLLParserCodeGen, CppLRParserCodeGen, CppLexerCodeGen};
-use lapex_input::{LapexInputParser, SourceSpan};
+use lapex_input::{LapexInputParser, SourcePos, SourceSpan};
 use lapex_lexer::LexerCodeGen;
 use lapex_parser::{
     grammar::{Grammar, Symbol},
@@ -32,10 +32,24 @@ impl Display for Severity {
 }
 
 #[derive(Debug)]
+pub struct Location {
+    pos: SourcePos,
+    file: PathBuf,
+    text: String,
+}
+impl Location {
+    fn from_span(span: SourceSpan, file: &Path, contents: &str) -> Option<Location> {
+        Some(Location {
+            pos: span.start,
+            file: file.to_path_buf(),
+            text: span.substring(contents)?.to_string(),
+        })
+    }
+}
+
+#[derive(Debug)]
 pub struct LapexError {
     severity: Severity,
-    file: PathBuf,
-    location: Option<SourceSpan>,
     error: LapexErrorType,
 }
 
@@ -43,10 +57,11 @@ pub struct LapexError {
 pub enum LapexErrorType {
     ShiftReduce {
         symbol_name: String,
-        production_src: String,
+        location: Location,
         item_text: String,
     },
     IO {
+        file: PathBuf,
         error: std::io::Error,
     },
 }
@@ -71,16 +86,14 @@ impl LapexError {
                     };
                     LapexError {
                         severity: Severity::Error,
-                        file: file.to_path_buf(),
-                        location: Some(item_to_reduce.production().span),
                         error: LapexErrorType::ShiftReduce {
                             symbol_name,
-                            production_src: item_to_reduce
-                                .production()
-                                .span
-                                .substring(contents)
-                                .unwrap()
-                                .to_string(),
+                            location: Location::from_span(
+                                item_to_reduce.production().span,
+                                file,
+                                contents,
+                            )
+                            .unwrap(),
                             item_text: format!("{}", item_to_reduce.display(grammar)),
                         },
                     }
@@ -93,9 +106,7 @@ impl LapexError {
     fn io(file: PathBuf, error: std::io::Error) -> Vec<LapexError> {
         vec![LapexError {
             severity: Severity::Error,
-            file,
-            location: None,
-            error: LapexErrorType::IO { error },
+            error: LapexErrorType::IO { error, file },
         }]
     }
 }
@@ -114,51 +125,56 @@ impl Display for LapexErrorType {
         match self {
             LapexErrorType::ShiftReduce {
                 symbol_name,
-                production_src,
+                location,
                 item_text,
-            } => {
-                writeln!(
-                    f,
-                    "{}\n{}\n",
-                    production_src,
-                    "~".repeat(production_src.len()).bright_red().bold()
-                )?;
-                write!(
-                    f,
+            } => write_section(
+                location,
+                format_args!(
                     "Could shift token\n\t{}\nOr reduce item\n\t{}",
                     symbol_name.bold(),
                     item_text.bold()
-                )
+                ),
+                f,
+            ),
+            LapexErrorType::IO { error, file } => {
+                write!(f, "     file: {}\n     reason: {}", file.display(), error)
             }
-            LapexErrorType::IO { error } => write!(f, "{}", error),
         }
     }
 }
 
 impl Error for LapexError {}
 
+fn write_section<D: Display>(
+    location: &Location,
+    contents: D,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    writeln!(
+        f,
+        " {} {}:{}:{}",
+        "-->".blue().bold(),
+        location.file.display(),
+        location.pos.line,
+        location.pos.col
+    )?;
+    let formatted = format!(
+        "{}\n{}\n\n{}",
+        location.text.as_str(),
+        "~".repeat(location.text.len()).bright_red().bold(),
+        contents
+    );
+    let lines_iter_padded = std::iter::once("").chain(formatted.lines().chain(std::iter::once("")));
+    let lines: Vec<String> = lines_iter_padded
+        .map(|l| format!("  {}  {}", "|".blue().bold(), l))
+        .collect();
+    write!(f, "{}", lines.join("\n"))
+}
+
 impl Display for LapexError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}: {}", self.severity, self.error.message())?;
-        let location_text = if let Some(location) = self.location {
-            format!(":{}:{}", location.start.line, location.start.col)
-        } else {
-            String::new()
-        };
-        writeln!(
-            f,
-            " {} {}{}",
-            "-->".blue().bold(),
-            self.file.display(),
-            location_text
-        )?;
-        let formatted_error = format!("{}", self.error);
-        let lines_iter_padded =
-            std::iter::once("").chain(formatted_error.lines().chain(std::iter::once("")));
-        let lines: Vec<String> = lines_iter_padded
-            .map(|l| format!("  {}  {}", "|".blue().bold(), l))
-            .collect();
-        write!(f, "{}", lines.join("\n"))
+        write!(f, "{}", self.error)
     }
 }
 
