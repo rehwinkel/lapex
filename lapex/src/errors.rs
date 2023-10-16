@@ -67,7 +67,7 @@ enum LapexErrorType {
 }
 
 impl LapexError {
-    pub fn conflicts<const N:usize>(
+    pub fn conflicts<const N: usize>(
         file: &Path,
         contents: &str,
         conflicts: &[Conflict<N>],
