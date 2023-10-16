@@ -109,8 +109,14 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                         .iter_state_non_terminals(state, self.grammar),
                 )
             {
-                if let Some([entry]) = entry.map(|v| v.as_slice()) {
-                    self.make_goto(symbol, state, entry, &mut gotos);
+                match entry.map(|v| v.as_slice()) {
+                    Some([entry]) => {
+                        self.make_goto(symbol, state, entry, &mut gotos);
+                    }
+                    Some([..]) => {
+                        panic!("Multiple transitions in non-G LR parser")
+                    }
+                    None => (),
                 }
             }
         }
@@ -167,9 +173,15 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
         for state in 0..self.parser_table.states() {
             let mut expected_symbols = Vec::new();
             for (symbol, entry) in self.parser_table.iter_state_terminals(state, self.grammar) {
-                if let Some([entry]) = entry.map(|v| v.as_slice()) {
-                    self.extract_expected_symbols(entry, symbol, &mut expected_symbols);
-                    self.make_action(symbol, state, entry, &mut actions);
+                match entry.map(|v| v.as_slice()) {
+                    Some([entry]) => {
+                        self.extract_expected_symbols(entry, symbol, &mut expected_symbols);
+                        self.make_action(symbol, state, entry, &mut actions);
+                    }
+                    Some([..]) => {
+                        panic!("Multiple transitions in non-G LR parser")
+                    }
+                    None => (),
                 }
             }
             let expected: Vec<TokenStream> = expected_symbols
