@@ -117,6 +117,10 @@ fn parse_regex_element(input: &[u8]) -> IResult<&[u8], Pattern> {
     alt((
         parse_regex_group,
         parse_char_set,
+        map(tag("."), |_| Pattern::CharSet {
+            chars: Vec::new(),
+            negated: true,
+        }),
         map(parse_char, |ch| Pattern::Char {
             chars: Characters::Single(ch),
         }),

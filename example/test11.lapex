@@ -1,0 +1,4 @@
+token WHITESPACE = /[ n\\]+/;
+
+entry program;
+prod program = WHITESPACE;
