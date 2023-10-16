@@ -8,7 +8,7 @@ use crate::alphabet::Alphabet;
 
 fn chain_pattern_iterator<'rules, 'p, I>(
     alphabet: &Alphabet,
-    nfa: &mut Nfa<&'rules TokenRule<'rules>, usize>,
+    nfa: &mut Nfa<&'rules Spanned<TokenRule<'rules>>, usize>,
     mut patterns: Peekable<I>,
     start: StateId,
     end: StateId,
@@ -36,7 +36,7 @@ where
 
 fn chain_pattern_times<'rules, 'p>(
     alphabet: &Alphabet,
-    nfa: &mut Nfa<&'rules TokenRule<'rules>, usize>,
+    nfa: &mut Nfa<&'rules Spanned<TokenRule<'rules>>, usize>,
     times: usize,
     pattern: &Pattern,
     start: StateId,
@@ -55,7 +55,7 @@ fn build_nfa_from_pattern<'rules>(
     start: StateId,
     end: StateId,
     alphabet: &Alphabet,
-    nfa: &mut Nfa<&'rules TokenRule<'rules>, usize>,
+    nfa: &mut Nfa<&'rules Spanned<TokenRule<'rules>>, usize>,
     pattern: &Pattern,
 ) -> Option<()> {
     match &pattern {
@@ -180,13 +180,13 @@ fn build_nfa_from_pattern<'rules>(
 pub fn generate_nfa<'rules>(
     alphabet: &Alphabet,
     rules: &'rules [Spanned<TokenRule>],
-) -> (StateId, Nfa<&'rules TokenRule<'rules>, usize>) {
-    let mut nfa: Nfa<&'rules TokenRule<'rules>, usize> = Nfa::new();
+) -> (StateId, Nfa<&'rules Spanned<TokenRule<'rules>>, usize>) {
+    let mut nfa: Nfa<&'rules Spanned<TokenRule<'rules>>, usize> = Nfa::new();
 
     let start = nfa.add_intermediate_state();
     for rule in rules {
         let rule_start = nfa.add_intermediate_state();
-        let rule_end = nfa.add_accepting_state(&rule.inner);
+        let rule_end = nfa.add_accepting_state(&rule);
         nfa.add_epsilon_transition(start, rule_start);
         match &rule.inner.pattern {
             TokenPattern::Literal { characters } => build_nfa_from_pattern(

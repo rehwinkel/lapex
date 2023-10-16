@@ -9,7 +9,7 @@ use clap::ValueEnum;
 use lapex_codegen::GeneratedCodeWriter;
 use lapex_cpp_codegen::{CppLLParserCodeGen, CppLRParserCodeGen, CppLexerCodeGen};
 use lapex_input::{LapexInputParser, SourcePos, SourceSpan};
-use lapex_lexer::LexerCodeGen;
+use lapex_lexer::{LexerCodeGen, PrecedenceError};
 use lapex_parser::{
     grammar::{Grammar, Symbol},
     ll_parser::LLParserCodeGen,
@@ -59,6 +59,9 @@ pub enum LapexErrorType {
         symbol_name: String,
         location: Location,
         item_text: String,
+    },
+    Precedence {
+        rules: Vec<(Location, String)>,
     },
     ReduceReduce {
         items: Vec<(Location, String)>,
@@ -126,6 +129,24 @@ impl LapexError {
             error: LapexErrorType::IO { error, file },
         }]
     }
+
+    fn precedence(file: &Path, contents: &str, error: PrecedenceError) -> Vec<LapexError> {
+        vec![LapexError {
+            severity: Severity::Error,
+            error: LapexErrorType::Precedence {
+                rules: error
+                    .rules
+                    .into_iter()
+                    .map(|r| {
+                        (
+                            Location::from_span(r.span, file, contents).unwrap(),
+                            r.inner,
+                        )
+                    })
+                    .collect(),
+            },
+        }]
+    }
 }
 
 impl LapexErrorType {
@@ -133,6 +154,7 @@ impl LapexErrorType {
         match self {
             LapexErrorType::ShiftReduce { .. } => "shift-reduce conflict in grammar",
             LapexErrorType::ReduceReduce { .. } => "reduce-reduce conflict in grammar",
+            LapexErrorType::Precedence { .. } => "conflicting token precedences in grammar",
             LapexErrorType::IO { .. } => "failed to read grammar file",
         }
     }
@@ -154,6 +176,19 @@ impl Display for LapexErrorType {
                 ),
                 f,
             ),
+            LapexErrorType::Precedence { rules } => {
+                for (i, (location, rule)) in rules.iter().enumerate() {
+                    write_section(
+                        location,
+                        format_args!("Token has identical precedence:\n\t{}", rule.bold()),
+                        f,
+                    )?;
+                    if i + 1 < rules.len() {
+                        writeln!(f)?;
+                    }
+                }
+                Ok(())
+            }
             LapexErrorType::ReduceReduce { items } => {
                 for (i, (location, item_text)) in items.iter().enumerate() {
                     write_section(
@@ -313,7 +348,7 @@ where
         let alphabet = lapex_lexer::generate_alphabet(&rules.token_rules);
         let (nfa_entrypoint, nfa) = lapex_lexer::generate_nfa(&alphabet, &rules.token_rules);
         let dfa = lapex_lexer::apply_precedence_to_dfa(nfa.powerset_construction(nfa_entrypoint))
-            .expect("TODO");
+            .map_err(|e| LapexError::precedence(grammar_path, file_contents.as_str(), e))?;
 
         lexer_codegen.generate_lexer(&rules.token_rules, &alphabet.get_ranges(), &dfa, &mut gen);
     }
