@@ -6,7 +6,11 @@ use lapex_codegen::GeneratedCodeWriter;
 use lapex_cpp_codegen::{CppLLParserCodeGen, CppLRParserCodeGen, CppLexerCodeGen};
 use lapex_input::LapexInputParser;
 use lapex_lexer::LexerCodeGen;
-use lapex_parser::{grammar::Grammar, ll_parser::LLParserCodeGen, lr_parser::LRParserCodeGen};
+use lapex_parser::{
+    grammar::Grammar,
+    ll_parser::LLParserCodeGen,
+    lr_parser::{GenerationResult, LRParserCodeGen},
+};
 use lapex_rust_codegen::{RustLLParserCodeGen, RustLRParserCodeGen, RustLexerCodeGen};
 
 mod errors;
@@ -127,9 +131,18 @@ where
             ll_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
         ParsingAlgorithm::LR0 => {
-            let parser_table = match lapex_parser::lr_parser::generate_table::<0>(&grammar) {
-                Ok(val) => val,
-                Err(_conflicts) => todo!(),
+            let parser_table = match lapex_parser::lr_parser::generate_table::<0>(&grammar, false) {
+                GenerationResult::NoConflicts(val) => val,
+                GenerationResult::BadConflicts(conflicts) => {
+                    return Err(LapexError::conflicts(
+                        grammar_path,
+                        file_contents.as_str(),
+                        &conflicts,
+                        &grammar,
+                    )
+                    .into());
+                }
+                _ => unreachable!(),
             };
             if generate_table {
                 gen.generate_code("table", |output| {
@@ -140,9 +153,9 @@ where
             lr_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
         ParsingAlgorithm::LR1 => {
-            let parser_table = match lapex_parser::lr_parser::generate_table::<1>(&grammar) {
-                Ok(val) => val,
-                Err(conflicts) => {
+            let parser_table = match lapex_parser::lr_parser::generate_table::<1>(&grammar, false) {
+                GenerationResult::NoConflicts(val) => val,
+                GenerationResult::BadConflicts(conflicts) => {
                     return Err(LapexError::conflicts(
                         grammar_path,
                         file_contents.as_str(),
@@ -151,6 +164,7 @@ where
                     )
                     .into());
                 }
+                _ => unreachable!(),
             };
             if generate_table {
                 gen.generate_code("table", |output| {

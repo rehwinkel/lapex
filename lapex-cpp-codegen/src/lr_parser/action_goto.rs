@@ -176,6 +176,18 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
         })
     }
 
+    fn translate_vecs_to_elements<'a, T>(
+        pair: (Symbol, Option<&'a Vec<T>>),
+    ) -> (Symbol, Option<&'a T>) {
+        return (
+            pair.0,
+            pair.1.map(|v| match v.as_slice() {
+                [e] => e,
+                _ => panic!("Multiple transitions in non-G LR parser"),
+            }),
+        );
+    }
+
     pub fn write_goto_table(&self, output: &mut dyn Write) -> Result<(), std::io::Error> {
         writeln!(output, "switch (state) {{")?;
         for state in 0..self.parser_table.states() {
@@ -190,7 +202,9 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     "switch (static_cast<lexer::TokenType>(current_symbol.identifier)) {{"
                 )?;
                 self.write_goto_cases(
-                    self.parser_table.iter_state_terminals(state, self.grammar),
+                    self.parser_table
+                        .iter_state_terminals(state, self.grammar)
+                        .map(Self::translate_vecs_to_elements),
                     output,
                 )?;
                 writeln!(output, "}}")?;
@@ -204,7 +218,8 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                 )?;
                 self.write_goto_cases(
                     self.parser_table
-                        .iter_state_non_terminals(state, self.grammar),
+                        .iter_state_non_terminals(state, self.grammar)
+                        .map(Self::translate_vecs_to_elements),
                     output,
                 )?;
                 writeln!(output, "}}")?;
@@ -232,7 +247,9 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
             writeln!(output, "case {}: {{", state)?;
             writeln!(output, "switch (lookahead_token) {{")?;
             self.write_action_cases(
-                self.parser_table.iter_state_terminals(state, self.grammar),
+                self.parser_table
+                    .iter_state_terminals(state, self.grammar)
+                    .map(Self::translate_vecs_to_elements),
                 output,
             )?;
             writeln!(output, "}}")?;

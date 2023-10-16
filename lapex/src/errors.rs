@@ -67,10 +67,10 @@ enum LapexErrorType {
 }
 
 impl LapexError {
-    pub fn conflicts(
+    pub fn conflicts<const N:usize>(
         file: &Path,
         contents: &str,
-        conflicts: &[Conflict<1>],
+        conflicts: &[Conflict<N>],
         grammar: &Grammar,
     ) -> Vec<Self> {
         conflicts

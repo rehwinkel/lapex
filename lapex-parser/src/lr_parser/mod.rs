@@ -249,7 +249,7 @@ impl<'grammar, 'rules> Display for TableEntry<'grammar, 'rules> {
 
 #[derive(Debug)]
 pub struct ActionGotoTable<'grammar, 'rules> {
-    entries: HashMap<(usize, Symbol), TableEntry<'grammar, 'rules>>,
+    entries: HashMap<(usize, Symbol), Vec<TableEntry<'grammar, 'rules>>>,
     state_count: usize,
     entry_state: usize,
 }
@@ -263,7 +263,7 @@ impl<'grammar: 'rules, 'rules> ActionGotoTable<'grammar, 'rules> {
         }
     }
 
-    pub fn get_entry(&self, state: usize, symbol: Symbol) -> Option<&TableEntry> {
+    pub fn get_entry(&self, state: usize, symbol: Symbol) -> Option<&Vec<TableEntry>> {
         self.entries.get(&(state, symbol))
     }
 
@@ -271,7 +271,7 @@ impl<'grammar: 'rules, 'rules> ActionGotoTable<'grammar, 'rules> {
         &self,
         state: usize,
         grammar: &'grammar Grammar,
-    ) -> impl Iterator<Item = (Symbol, Option<&TableEntry>)> {
+    ) -> impl Iterator<Item = (Symbol, Option<&Vec<TableEntry>>)> {
         grammar
             .terminals()
             .chain(std::iter::once(Symbol::End))
@@ -282,7 +282,7 @@ impl<'grammar: 'rules, 'rules> ActionGotoTable<'grammar, 'rules> {
         &self,
         state: usize,
         grammar: &'grammar Grammar,
-    ) -> impl Iterator<Item = (Symbol, Option<&TableEntry>)> {
+    ) -> impl Iterator<Item = (Symbol, Option<&Vec<TableEntry>>)> {
         grammar
             .non_terminals()
             .map(move |s| (s, self.get_entry(state, s)))
@@ -297,41 +297,42 @@ impl<'grammar: 'rules, 'rules> ActionGotoTable<'grammar, 'rules> {
     }
 
     fn insert_reduce(&mut self, state: NodeIndex, symbol: Symbol, rule: &'grammar Rule<'rules>) {
-        let prev_entry = self
-            .entries
-            .insert((state.index(), symbol), TableEntry::Reduce { rule });
-        assert!(prev_entry.is_none());
+        self.entries
+            .entry((state.index(), symbol))
+            .or_insert(Vec::new())
+            .push(TableEntry::Reduce { rule });
     }
 
     fn insert_shift(&mut self, state: NodeIndex, symbol: Symbol, target: NodeIndex) {
-        let prev_entry = self.entries.insert(
-            (state.index(), symbol),
-            TableEntry::Shift {
+        self.entries
+            .entry((state.index(), symbol))
+            .or_insert(Vec::new())
+            .push(TableEntry::Shift {
                 target: target.index(),
-            },
-        );
-        assert!(prev_entry.is_none());
+            });
     }
 
     fn insert_error(&mut self, state: NodeIndex, symbol: Symbol) {
-        let prev_entry = self
-            .entries
-            .insert((state.index(), symbol), TableEntry::Error);
-        assert!(prev_entry.is_none());
+        self.entries
+            .entry((state.index(), symbol))
+            .or_insert(Vec::new())
+            .push(TableEntry::Error);
     }
 
     fn insert_accept(&mut self, state: NodeIndex, symbol: Symbol) {
-        let prev_entry = self
-            .entries
-            .insert((state.index(), symbol), TableEntry::Accept);
-        assert!(prev_entry.is_none());
+        self.entries
+            .entry((state.index(), symbol))
+            .or_insert(Vec::new())
+            .push(TableEntry::Accept);
     }
 
     pub fn state_has_shift(&self, state: usize, grammar: &'grammar Grammar) -> bool {
         self.iter_state_non_terminals(state, grammar)
             .chain(self.iter_state_terminals(state, grammar))
-            .any(|(_s, e)| {
-                if let Some(TableEntry::Shift { target: _ }) = e {
+            .filter_map(|(_s, e)| e)
+            .flat_map(|e| e)
+            .any(|e| {
+                if let TableEntry::Shift { target: _ } = e {
                     true
                 } else {
                     false
@@ -340,9 +341,19 @@ impl<'grammar: 'rules, 'rules> ActionGotoTable<'grammar, 'rules> {
     }
 }
 
+pub enum GenerationResult<'grammar, 'rules, const N: usize> {
+    NoConflicts(ActionGotoTable<'grammar, 'rules>),
+    AllowedConflicts {
+        table: ActionGotoTable<'grammar, 'rules>,
+        conflicts: Vec<Conflict<'grammar, 'rules, N>>,
+    },
+    BadConflicts(Vec<Conflict<'grammar, 'rules, N>>),
+}
+
 pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
     grammar: &'grammar Grammar<'rules>,
-) -> Result<ActionGotoTable<'grammar, 'rules>, Vec<Conflict<'grammar, 'rules, N>>> {
+    allow_conflicts: bool,
+) -> GenerationResult<'grammar, 'rules, N> {
     let first_sets = if N > 0 {
         compute_first_sets(grammar)
     } else {
@@ -350,8 +361,8 @@ pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
     };
     let parser_graph = generate_parser_graph(grammar, &first_sets);
     let conflicts = find_conflicts(&parser_graph);
-    if !conflicts.is_empty() {
-        return Err(conflicts);
+    if !allow_conflicts && !conflicts.is_empty() {
+        return GenerationResult::BadConflicts(conflicts);
     }
 
     let entry_state = parser_graph.entry_state.unwrap().index();
@@ -395,7 +406,11 @@ pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
         }
     }
 
-    Ok(table)
+    if conflicts.is_empty() {
+        GenerationResult::NoConflicts(table)
+    } else {
+        GenerationResult::AllowedConflicts { table, conflicts }
+    }
 }
 
 pub fn output_table<'grammar, 'rules>(
@@ -435,33 +450,37 @@ pub fn output_table<'grammar, 'rules>(
             .chain(std::iter::once(Symbol::End))
             .enumerate()
         {
-            match table.get_entry(state, symbol) {
-                Some(TableEntry::Shift { target }) => {
-                    let rule_id_text = format!("s{}", target);
-                    write!(
-                        output,
-                        "{: <width$}|",
-                        rule_id_text,
-                        width = column_sizes[i]
-                    )?;
+            if let Some(entries) = table.get_entry(state, symbol) {
+                match entries.as_slice() {
+                    [TableEntry::Shift { target }] => {
+                        let rule_id_text = format!("s{}", target);
+                        write!(
+                            output,
+                            "{: <width$}|",
+                            rule_id_text,
+                            width = column_sizes[i]
+                        )?;
+                    }
+                    [TableEntry::Reduce { rule }] => {
+                        let rule_id_text =
+                            format!("r{}", rule_index_map.get(&(*rule as *const Rule)).unwrap());
+                        write!(
+                            output,
+                            "{: <width$}|",
+                            rule_id_text,
+                            width = column_sizes[i]
+                        )?;
+                    }
+                    [TableEntry::Error] => {
+                        write!(output, "{: <width$}|", "e", width = column_sizes[i])?
+                    }
+                    [TableEntry::Accept] => {
+                        write!(output, "{: <width$}|", "a", width = column_sizes[i])?
+                    }
+                    _ => write!(output, "{: <width$}|", "c", width = column_sizes[i])?,
                 }
-                Some(TableEntry::Reduce { rule }) => {
-                    let rule_id_text =
-                        format!("r{}", rule_index_map.get(&(*rule as *const Rule)).unwrap());
-                    write!(
-                        output,
-                        "{: <width$}|",
-                        rule_id_text,
-                        width = column_sizes[i]
-                    )?;
-                }
-                Some(TableEntry::Error) => {
-                    write!(output, "{: <width$}|", "e", width = column_sizes[i])?
-                }
-                Some(TableEntry::Accept) => {
-                    write!(output, "{: <width$}|", "a", width = column_sizes[i])?
-                }
-                None => write!(output, "{: <width$}|", "", width = column_sizes[i])?,
+            } else {
+                write!(output, "{: <width$}|", "", width = column_sizes[i])?
             }
         }
         writeln!(output, "")?;
