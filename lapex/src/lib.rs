@@ -3,7 +3,9 @@ use std::{fmt::Display, io::BufWriter, path::Path};
 use clap::ValueEnum;
 use errors::LapexError;
 use lapex_codegen::GeneratedCodeWriter;
-use lapex_cpp_codegen::{CppLLParserCodeGen, CppLRParserCodeGen, CppLexerCodeGen};
+use lapex_cpp_codegen::{
+    CppGLRParserCodeGen, CppLLParserCodeGen, CppLRParserCodeGen, CppLexerCodeGen,
+};
 use lapex_input::LapexInputParser;
 use lapex_lexer::LexerCodeGen;
 use lapex_parser::{
@@ -11,7 +13,9 @@ use lapex_parser::{
     ll_parser::LLParserCodeGen,
     lr_parser::{GenerationResult, LRParserCodeGen},
 };
-use lapex_rust_codegen::{RustLLParserCodeGen, RustLRParserCodeGen, RustLexerCodeGen};
+use lapex_rust_codegen::{
+    RustGLRParserCodeGen, RustLLParserCodeGen, RustLRParserCodeGen, RustLexerCodeGen,
+};
 
 mod errors;
 
@@ -20,6 +24,7 @@ pub enum ParsingAlgorithm {
     LL1,
     LR0,
     LR1,
+    GLR,
 }
 
 impl Display for ParsingAlgorithm {
@@ -31,6 +36,7 @@ impl Display for ParsingAlgorithm {
                 ParsingAlgorithm::LL1 => "ll1",
                 ParsingAlgorithm::LR0 => "lr0",
                 ParsingAlgorithm::LR1 => "lr1",
+                ParsingAlgorithm::GLR => "glr",
             }
         )
     }
@@ -42,15 +48,16 @@ pub enum Language {
     Cpp,
 }
 
-trait LanguageFactory<Lexer, LR, LL> {
+trait LanguageFactory<Lexer, LR, LL, GLR> {
     fn lexer(&self) -> Lexer;
     fn lr_parser(&self) -> LR;
+    fn glr_parser(&self) -> GLR;
     fn ll_parser(&self) -> LL;
 }
 
 struct CppLanguageFactory;
 
-impl LanguageFactory<CppLexerCodeGen, CppLRParserCodeGen, CppLLParserCodeGen>
+impl LanguageFactory<CppLexerCodeGen, CppLRParserCodeGen, CppLLParserCodeGen, CppGLRParserCodeGen>
     for CppLanguageFactory
 {
     fn lexer(&self) -> CppLexerCodeGen {
@@ -61,6 +68,10 @@ impl LanguageFactory<CppLexerCodeGen, CppLRParserCodeGen, CppLLParserCodeGen>
         CppLRParserCodeGen::new()
     }
 
+    fn glr_parser(&self) -> CppGLRParserCodeGen {
+        CppGLRParserCodeGen::new()
+    }
+
     fn ll_parser(&self) -> CppLLParserCodeGen {
         CppLLParserCodeGen::new()
     }
@@ -68,8 +79,13 @@ impl LanguageFactory<CppLexerCodeGen, CppLRParserCodeGen, CppLLParserCodeGen>
 
 struct RustLanguageFactory;
 
-impl LanguageFactory<RustLexerCodeGen, RustLRParserCodeGen, RustLLParserCodeGen>
-    for RustLanguageFactory
+impl
+    LanguageFactory<
+        RustLexerCodeGen,
+        RustLRParserCodeGen,
+        RustLLParserCodeGen,
+        RustGLRParserCodeGen,
+    > for RustLanguageFactory
 {
     fn lexer(&self) -> RustLexerCodeGen {
         RustLexerCodeGen::new()
@@ -79,12 +95,16 @@ impl LanguageFactory<RustLexerCodeGen, RustLRParserCodeGen, RustLLParserCodeGen>
         RustLRParserCodeGen::new()
     }
 
+    fn glr_parser(&self) -> RustGLRParserCodeGen {
+        RustGLRParserCodeGen::new()
+    }
+
     fn ll_parser(&self) -> RustLLParserCodeGen {
         RustLLParserCodeGen::new()
     }
 }
 
-fn generate_lexer_and_parser<L, LR, LL, F, I>(
+fn generate_lexer_and_parser<L, LR, LL, GLR, F, I>(
     generate_lexer: bool,
     algorithm: ParsingAlgorithm,
     generate_table: bool,
@@ -97,12 +117,14 @@ where
     L: LexerCodeGen,
     LR: LRParserCodeGen,
     LL: LLParserCodeGen,
-    F: LanguageFactory<L, LR, LL>,
+    GLR: LRParserCodeGen,
+    F: LanguageFactory<L, LR, LL, GLR>,
     I: LapexInputParser,
 {
     let lexer_codegen = language.lexer();
     let ll_codegen = language.ll_parser();
     let lr_codegen = language.lr_parser();
+    let glr_codegen = language.glr_parser();
 
     let file_contents = std::fs::read_to_string(grammar_path)
         .map_err(|e| LapexError::io(grammar_path.to_path_buf(), e))?;
@@ -173,6 +195,26 @@ where
                 .expect("TODO");
             }
             lr_codegen.generate_code(&grammar, &parser_table, &mut gen);
+        }
+        ParsingAlgorithm::GLR => {
+            let parser_table = match lapex_parser::lr_parser::generate_table::<1>(&grammar, true) {
+                GenerationResult::NoConflicts(table) => table,
+                GenerationResult::AllowedConflicts {
+                    table,
+                    conflicts: _conflicts,
+                } => {
+                    // TODO: conflicts
+                    table
+                }
+                _ => unreachable!(),
+            };
+            if generate_table {
+                gen.generate_code("table", |output| {
+                    lapex_parser::lr_parser::output_table(&grammar, &parser_table, output)
+                })
+                .expect("TODO");
+            }
+            glr_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
     };
     Ok(())

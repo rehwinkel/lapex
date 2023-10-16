@@ -40,6 +40,21 @@ impl Default for CppLRParserCodeGen {
     }
 }
 
+pub struct CppGLRParserCodeGen {}
+
+impl CppGLRParserCodeGen {
+    pub fn new() -> Self {
+        CppGLRParserCodeGen {}
+    }
+}
+
+impl Default for CppGLRParserCodeGen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+mod glr_parser;
 mod lexer;
 mod ll_parser;
 mod lr_parser;

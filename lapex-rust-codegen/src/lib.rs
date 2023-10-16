@@ -42,6 +42,20 @@ impl Default for RustLRParserCodeGen {
     }
 }
 
+pub struct RustGLRParserCodeGen {}
+
+impl RustGLRParserCodeGen {
+    pub fn new() -> Self {
+        RustGLRParserCodeGen {}
+    }
+}
+
+impl Default for RustGLRParserCodeGen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn get_token_enum_name(name: &str) -> String {
     format!("Tk{}", convert_snake_to_upper_camel(name))
 }
@@ -68,6 +82,7 @@ fn convert_snake_to_upper_camel(name: &str) -> String {
         .join("")
 }
 
+mod glr_parser;
 mod lexer;
 mod ll_parser;
 mod lr_parser;
