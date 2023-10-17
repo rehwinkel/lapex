@@ -198,12 +198,15 @@ where
         }
         ParsingAlgorithm::GLR => {
             let parser_table = match lapex_parser::lr_parser::generate_table::<1>(&grammar, true) {
-                GenerationResult::NoConflicts(table) => table,
+                GenerationResult::NoConflicts(table) => {
+                    // TODO: info about using LR1 instead
+                    table
+                }
                 GenerationResult::AllowedConflicts {
                     table,
                     conflicts: _conflicts,
                 } => {
-                    // TODO: conflicts
+                    // TODO: info about conflicts
                     table
                 }
                 _ => unreachable!(),
