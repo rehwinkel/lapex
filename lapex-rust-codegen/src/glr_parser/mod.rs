@@ -1,4 +1,7 @@
-use std::{collections::HashMap, io::Write};
+use std::{
+    collections::{BTreeSet, HashMap},
+    io::Write,
+};
 
 use lapex_codegen::GeneratedCodeWriter;
 use lapex_parser::{
@@ -114,8 +117,10 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     Some([entry]) => {
                         self.make_goto(symbol, state, entry, &mut gotos);
                     }
-                    Some([..]) => {
-                        todo!()
+                    Some(entries) => {
+                        for entry in entries {
+                            self.make_goto(symbol, state, entry, &mut gotos);
+                        }
                     }
                     None => (),
                 }
@@ -172,15 +177,14 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
     fn make_actions(&self) -> Vec<TokenStream> {
         let mut actions: Vec<TokenStream> = Vec::new();
         for state in 0..self.parser_table.states() {
-            let mut expected_symbols = Vec::new();
+            let mut expected_symbols = BTreeSet::new();
             for (symbol, entry) in self.parser_table.iter_state_terminals(state, self.grammar) {
                 match entry.map(|v| v.as_slice()) {
-                    Some([entry]) => {
-                        self.extract_expected_symbols(entry, symbol, &mut expected_symbols);
-                        self.make_action(symbol, state, entry, &mut actions);
-                    }
-                    Some([..]) => {
-                        todo!()
+                    Some(entries) => {
+                        for entry in entries {
+                            self.extract_expected_symbols(entry, symbol, &mut expected_symbols);
+                        }
+                        self.make_action(symbol, state, entries, &mut actions);
                     }
                     None => (),
                 }
@@ -208,7 +212,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
         &self,
         symbol: Symbol,
         state: usize,
-        entry: &TableEntry,
+        entries: &[TableEntry],
         actions: &mut Vec<TokenStream>,
     ) {
         let condition = match symbol {
@@ -227,21 +231,29 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
             _ => None,
         };
         if let Some(condition) = condition {
-            match entry {
-                TableEntry::Shift { target: _ } => {
-                    actions.push(quote! {
-                        #condition => Ok(Action::Shift),
-                    });
+            let mut actions_for_entry = Vec::new();
+            for entry in entries {
+                match entry {
+                    TableEntry::Shift { target: _ } => {
+                        actions_for_entry.push(quote! {
+                           Action::Shift
+                        });
+                    }
+                    TableEntry::Reduce { rule } => {
+                        let rule_ptr = (*rule) as *const Rule;
+                        let rule_index = self.rule_index_map.get(&rule_ptr).unwrap();
+                        let rule_name: TokenStream = format!("Rule{}", rule_index).parse().unwrap();
+                        actions_for_entry.push(quote! {
+                            Action::Reduce { rule: ReducedRule::#rule_name }
+                        });
+                    }
+                    _ => (),
                 }
-                TableEntry::Reduce { rule } => {
-                    let rule_ptr = (*rule) as *const Rule;
-                    let rule_index = self.rule_index_map.get(&rule_ptr).unwrap();
-                    let rule_name: TokenStream = format!("Rule{}", rule_index).parse().unwrap();
-                    actions.push(quote! {
-                        #condition => Ok(Action::Reduce { rule: ReducedRule::#rule_name }),
-                    });
-                }
-                _ => (),
+            }
+            if !actions_for_entry.is_empty() {
+                actions.push(quote! {
+                    #condition => Ok(&[#(#actions_for_entry,)*]),
+                });
             }
         }
     }
@@ -250,15 +262,15 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
         &self,
         entry: &TableEntry,
         symbol: Symbol,
-        expected_symbols: &mut Vec<Option<u32>>,
+        expected_symbols: &mut BTreeSet<Option<u32>>,
     ) {
         match entry {
             TableEntry::Shift { target: _ } | TableEntry::Reduce { rule: _ } => match symbol {
                 Symbol::Terminal(token_index) => {
-                    expected_symbols.push(Some(token_index));
+                    expected_symbols.insert(Some(token_index));
                 }
                 Symbol::End => {
-                    expected_symbols.push(None);
+                    expected_symbols.insert(None);
                 }
                 _ => (),
             },
@@ -401,7 +413,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     }
                 }
 
-                fn next_action(&self, state: usize, next_token: TokenType) -> Result<Action, ParserError> {
+                fn next_actions(&self, state: usize, next_token: TokenType) -> Result<&'static [Action], ParserError> {
                     match (state, next_token) {
                         #(#actions)*
                         (_, _) => unreachable!()
@@ -415,7 +427,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     }
                 }
 
-                fn reduce_stack_and_visit(&mut self, rule: ReducedRule, stack: &mut Vec<StackSymbol>) {
+                fn reduce_stack_and_visit(&mut self, rule: &ReducedRule, stack: &mut Vec<StackSymbol>) {
                     let (to_pop, reduced) = match rule {
                         #(#rule_reductions),*
                     };
@@ -442,17 +454,20 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                             StackSymbol::State { state_id } => *state_id,
                             _ => unreachable!()
                         };
-                        let action = self.next_action(state, *next_token)?;
-                        match action {
-                            Action::Shift => {
+                        let actions = self.next_actions(state, *next_token)?;
+                        match actions {
+                            [Action::Shift] => {
                                 let (next_token, next_data) = lookahead.pop_front().unwrap();
                                 stack.push(StackSymbol::Terminal { token: next_token });
                                 self.visitor.shift(next_token, next_data);
 
                                 lookahead.push_back((self.token_function)());
                             }
-                            Action::Reduce { rule: reduced_rule } => {
+                            [Action::Reduce { rule: reduced_rule }] => {
                                 self.reduce_stack_and_visit(reduced_rule, &mut stack);
+                            }
+                            [..] => {
+                                todo!("multiple actions")
                             }
                         }
                         let current_symbol = stack.last().unwrap();
