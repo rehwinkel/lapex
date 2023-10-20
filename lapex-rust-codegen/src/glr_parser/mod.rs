@@ -139,21 +139,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     println!("shift {:?}", token);
                 }
 
-                fn reduce_bla_1(&mut self) {
-                    println!("bla(0) -> A(1) B(0)");
-                }
-
-                fn reduce_bla_2(&mut self) {
-                    println!("bla(0) -> A(1)");
-                }
-
-                fn reduce_blas_1(&mut self) {
-                    println!("blas(2) -> bla(0)");
-                }
-
-                fn reduce_blas_2(&mut self) {
-                    println!("blas(2) -> bla(0) B(0) blas(2)");
-                }
+                #(#reduce_functions)*
             }
         };
         write!(output, "{}", tokens)
