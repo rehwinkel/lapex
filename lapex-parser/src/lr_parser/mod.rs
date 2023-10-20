@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fmt::Display,
     io::Write,
 };
@@ -26,7 +26,7 @@ type ItemSet<'grammar, 'rules, const N: usize> = BTreeSet<Item<'grammar, 'rules,
 fn expand_item<'grammar: 'rules, 'rules, const N: usize>(
     item: Item<'grammar, 'rules, N>,
     grammar: &'grammar Grammar,
-    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
+    first_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
 ) -> ItemSet<'grammar, 'rules, N> {
     let mut item_set: ItemSet<'grammar, 'rules, N> = BTreeSet::new();
     let mut to_expand: Vec<Item<N>> = Vec::new();
@@ -61,7 +61,7 @@ fn expand_item<'grammar: 'rules, 'rules, const N: usize>(
 
 fn determine_lookaheads_to_expand<const N: usize>(
     item: &Item<N>,
-    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
+    first_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
     top: &Item<N>,
 ) -> Vec<[Symbol; N]> {
     if N > 1 {
@@ -132,7 +132,7 @@ impl<'grammar, 'rules, const N: usize> ParserGraph<'grammar, 'rules, N> {
 
 fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
     grammar: &'grammar Grammar<'rules>,
-    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
+    first_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
 ) -> ParserGraph<'grammar, 'rules, N> {
     let entry_item = Item::new(grammar.entry_rule(), [Symbol::End; N]);
     let entry_item_set = expand_item(entry_item, grammar, first_sets);
@@ -145,7 +145,7 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
 
     while let Some(start_state) = unprocessed_states.pop() {
         let item_set = parser_graph.get_item_set(&start_state).unwrap();
-        let mut transition_map: HashMap<Symbol, ItemSet<'grammar, 'rules, N>> = HashMap::new();
+        let mut transition_map: BTreeMap<Symbol, ItemSet<'grammar, 'rules, N>> = BTreeMap::new();
         for item in item_set {
             if let Some(transition_symbol) = item.symbol_after_dot() {
                 let mut target_item = item.clone();
@@ -189,7 +189,7 @@ fn find_conflicts<'grammar, 'rules, const N: usize>(
 ) -> Vec<Conflict<'grammar, 'rules, N>> {
     let mut conflicts = Vec::new();
     for (item_set, state) in parser_graph.state_map.iter() {
-        let mut reducing_items: HashMap<[Symbol; N], Vec<&Item<N>>> = HashMap::new();
+        let mut reducing_items: BTreeMap<[Symbol; N], Vec<&Item<N>>> = BTreeMap::new();
         for item in item_set {
             if item.symbol_after_dot().is_none() {
                 reducing_items
@@ -249,7 +249,7 @@ impl<'grammar, 'rules> Display for TableEntry<'grammar, 'rules> {
 
 #[derive(Debug)]
 pub struct ActionGotoTable<'grammar, 'rules> {
-    entries: HashMap<(usize, Symbol), Vec<TableEntry<'grammar, 'rules>>>,
+    entries: BTreeMap<(usize, Symbol), Vec<TableEntry<'grammar, 'rules>>>,
     state_count: usize,
     entry_state: usize,
 }
@@ -257,7 +257,7 @@ pub struct ActionGotoTable<'grammar, 'rules> {
 impl<'grammar: 'rules, 'rules> ActionGotoTable<'grammar, 'rules> {
     fn new(state_count: usize, entry_state: usize) -> Self {
         ActionGotoTable {
-            entries: HashMap::new(),
+            entries: BTreeMap::new(),
             state_count,
             entry_state,
         }
@@ -357,7 +357,7 @@ pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
     let first_sets = if N > 0 {
         compute_first_sets(grammar)
     } else {
-        HashMap::new()
+        BTreeMap::new()
     };
     let parser_graph = generate_parser_graph(grammar, &first_sets);
     let conflicts = find_conflicts(&parser_graph);
@@ -386,7 +386,7 @@ pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
                 }
             }
         }
-        let reachable_states: HashMap<Symbol, NodeIndex> = parser_graph
+        let reachable_states: BTreeMap<Symbol, NodeIndex> = parser_graph
             .graph
             .edges_directed(*state, Outgoing)
             .map(|e| (*e.weight(), e.target()))
@@ -418,7 +418,7 @@ pub fn output_table<'grammar, 'rules>(
     table: &ActionGotoTable<'grammar, 'rules>,
     output: &mut dyn Write,
 ) -> std::io::Result<()> {
-    let rule_index_map: HashMap<*const Rule, usize> = grammar
+    let rule_index_map: BTreeMap<*const Rule, usize> = grammar
         .rules()
         .iter()
         .enumerate()

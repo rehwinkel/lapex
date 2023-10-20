@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 pub use codegen::*;
 
@@ -45,7 +45,7 @@ pub fn apply_precedence_to_dfa<'rules>(
     dfa: Dfa<Vec<&'rules Spanned<TokenRule<'rules>>>, usize>,
 ) -> Result<Dfa<&'rules TokenRule<'rules>, usize>, PrecedenceError> {
     let mut resulting_dfa = Dfa::new();
-    let mut state_mapping = HashMap::new();
+    let mut state_mapping = BTreeMap::new();
     for (idx, state) in dfa.states() {
         match state {
             AutomatonState::Accepting(accepted) => {

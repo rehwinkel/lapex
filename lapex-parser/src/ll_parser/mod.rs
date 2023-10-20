@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroU32;
@@ -13,10 +13,10 @@ mod codegen;
 fn get_follow_symbols_of_remainder(
     lhs: Option<Symbol>,
     remainder: &[Symbol],
-    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
-    follow_sets: &HashMap<Symbol, HashSet<Symbol>>,
-) -> HashSet<Symbol> {
-    let mut result_set = HashSet::new();
+    first_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
+    follow_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
+) -> BTreeSet<Symbol> {
+    let mut result_set = BTreeSet::new();
     let remainder_first_set = get_first_terminals_of_sequence(remainder, first_sets);
     let remainder_first_has_epsilon = remainder_first_set.contains(&Symbol::Epsilon);
     let should_add_lhs_follow_set = remainder_first_has_epsilon || remainder.is_empty();
@@ -35,12 +35,12 @@ fn get_follow_symbols_of_remainder(
 
 fn compute_follow_sets(
     grammar: &Grammar,
-    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
-) -> HashMap<Symbol, HashSet<Symbol>> {
+    first_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
+) -> BTreeMap<Symbol, BTreeSet<Symbol>> {
     // init empty first sets
-    let mut follow_sets = HashMap::new();
+    let mut follow_sets = BTreeMap::new();
     for nt in grammar.non_terminals() {
-        follow_sets.insert(nt, HashSet::new());
+        follow_sets.insert(nt, BTreeSet::new());
     }
     // repeat until no more changes occur
     let terminated_entry_point_rhs = vec![*grammar.entry_point(), Symbol::End];
@@ -102,13 +102,13 @@ impl Display for LLParserError {
 
 #[derive(Debug, PartialEq)]
 pub struct LLParserTable {
-    table: HashMap<(u32, Option<NonZeroU32>), Vec<Symbol>>,
+    table: BTreeMap<(u32, Option<NonZeroU32>), Vec<Symbol>>,
 }
 
 impl LLParserTable {
     fn new() -> Self {
         LLParserTable {
-            table: HashMap::new(),
+            table: BTreeMap::new(),
         }
     }
 

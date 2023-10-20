@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Write};
+use std::{collections::BTreeMap, io::Write};
 
 use lapex_codegen::GeneratedCodeWriter;
 use lapex_parser::{
@@ -12,13 +12,13 @@ use crate::{get_non_terminal_enum_name, get_token_enum_name, RustLRParserCodeGen
 struct CodeWriter<'grammar, 'rules> {
     grammar: &'grammar Grammar<'grammar>,
     parser_table: &'grammar ActionGotoTable<'grammar, 'rules>,
-    rule_index_map: HashMap<*const Rule<'rules>, usize>,
-    rules_by_non_terminal: HashMap<Symbol, Vec<&'grammar Rule<'rules>>>,
+    rule_index_map: BTreeMap<*const Rule<'rules>, usize>,
+    rules_by_non_terminal: BTreeMap<Symbol, Vec<&'grammar Rule<'rules>>>,
 }
 
 impl<'grammar: 'rules, 'rules> CodeWriter<'grammar, 'rules> {
     fn new(grammar: &'grammar Grammar, parser_table: &'grammar ActionGotoTable) -> Self {
-        let mut rules_by_non_terminal = HashMap::new();
+        let mut rules_by_non_terminal = BTreeMap::new();
         for rule in grammar.rules() {
             if let Some(non_terminal) = rule.lhs() {
                 rules_by_non_terminal
@@ -27,7 +27,7 @@ impl<'grammar: 'rules, 'rules> CodeWriter<'grammar, 'rules> {
                     .push(rule);
             }
         }
-        let rule_index_map: HashMap<*const Rule, usize> = grammar
+        let rule_index_map: BTreeMap<*const Rule, usize> = grammar
             .rules()
             .iter()
             .enumerate()

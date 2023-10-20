@@ -1,7 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Display},
-    hash::Hash,
 };
 
 use petgraph::{
@@ -139,10 +138,10 @@ impl<StateType: Debug, TransitionType: Debug> Dfa<StateType, TransitionType> {
     }
 }
 
-impl<StateType: Clone + Debug, TransitionType: Debug + Clone + Eq + Hash>
+impl<StateType: Clone + Debug, TransitionType: Debug + Clone + Eq + Ord>
     Nfa<StateType, TransitionType>
 {
-    fn epsilon_closure(&self, start_nodes: Vec<StateId>, closure: &mut HashSet<StateId>) {
+    fn epsilon_closure(&self, start_nodes: Vec<StateId>, closure: &mut BTreeSet<StateId>) {
         for start_node in start_nodes {
             closure.insert(start_node);
             let edges = self
@@ -161,10 +160,10 @@ impl<StateType: Clone + Debug, TransitionType: Debug + Clone + Eq + Hash>
 
     fn add_powerset_to_dfa(
         &self,
-        dfa: &mut Graph<HashSet<StateId>, TransitionType>,
+        dfa: &mut Graph<BTreeSet<StateId>, TransitionType>,
         nodes: Vec<StateId>,
     ) -> StateId {
-        let mut closure = HashSet::new(); // TODO: test perf of different data structures
+        let mut closure = BTreeSet::new(); // TODO: test perf of different data structures
         self.epsilon_closure(nodes, &mut closure);
 
         // find an existing node with the same powerset
@@ -179,7 +178,7 @@ impl<StateType: Clone + Debug, TransitionType: Debug + Clone + Eq + Hash>
             // if the powerset is new, add it to the graph and recurse
             let node_dfa = dfa.add_node(closure.clone());
 
-            let mut target_multi_map: HashMap<TransitionType, Vec<StateId>> = HashMap::new();
+            let mut target_multi_map: BTreeMap<TransitionType, Vec<StateId>> = BTreeMap::new();
             for node in closure {
                 let edges = self
                     .graph
@@ -204,10 +203,10 @@ impl<StateType: Clone + Debug, TransitionType: Debug + Clone + Eq + Hash>
 
     fn convert_powerset_to_dfa(
         &self,
-        powerset_dfa: &Graph<HashSet<StateId>, TransitionType>,
+        powerset_dfa: &Graph<BTreeSet<StateId>, TransitionType>,
         tmp_id: &mut usize,
         dfa: &mut Dfa<Vec<StateType>, TransitionType>,
-        visited: &mut HashMap<StateId, StateId>,
+        visited: &mut BTreeMap<StateId, StateId>,
         node: StateId,
     ) -> StateId {
         let mut accepts = Vec::new();
@@ -240,14 +239,14 @@ impl<StateType: Clone + Debug, TransitionType: Debug + Clone + Eq + Hash>
         &self,
         entrypoint: StateId,
     ) -> Dfa<Vec<StateType>, TransitionType> {
-        let mut powerset_dfa: Graph<HashSet<StateId>, TransitionType> = DiGraph::new();
+        let mut powerset_dfa: Graph<BTreeSet<StateId>, TransitionType> = DiGraph::new();
 
         let start_dfa = self.add_powerset_to_dfa(&mut powerset_dfa, vec![entrypoint]);
 
         let mut tmp_id = 0;
         let mut dfa = Dfa::new();
 
-        let mut visited = HashMap::new();
+        let mut visited = BTreeMap::new();
         self.convert_powerset_to_dfa(
             &powerset_dfa,
             &mut tmp_id,

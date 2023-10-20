@@ -1,12 +1,12 @@
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct SourcePos {
     pub line: u16,
     pub col: u16,
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct SourceSpan {
     pub start: SourcePos,
     pub end: SourcePos,
@@ -42,7 +42,7 @@ impl SourceSpan {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct Spanned<T> {
     pub span: SourceSpan,
     pub inner: T,
@@ -164,7 +164,7 @@ impl<'src> TokenRule<'src> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ProductionRule<'src> {
     pub name: &'src str,
     pub pattern: ProductionPattern<'src>,
@@ -175,7 +175,7 @@ pub struct EntryRule<'src> {
     pub name: &'src str,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ProductionPattern<'src> {
     Sequence {
         elements: Vec<ProductionPattern<'src>>,

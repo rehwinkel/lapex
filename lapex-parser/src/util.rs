@@ -1,18 +1,18 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::grammar::{Grammar, Symbol};
 
 pub fn get_first_terminals_of_sequence(
     sequence: &[Symbol],
-    first_sets: &HashMap<Symbol, HashSet<Symbol>>,
-) -> HashSet<Symbol> {
+    first_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
+) -> BTreeSet<Symbol> {
     let epsilon_first_set = {
-        let mut new_set = HashSet::new();
+        let mut new_set = BTreeSet::new();
         new_set.insert(Symbol::Epsilon);
         new_set
     };
 
-    let mut result_set = HashSet::new();
+    let mut result_set = BTreeSet::new();
     for i in 0..sequence.len() {
         let symbol = sequence[i];
         let is_last = i + 1 == sequence.len();
@@ -46,11 +46,11 @@ pub fn get_first_terminals_of_sequence(
     result_set
 }
 
-pub fn compute_first_sets(grammar: &Grammar) -> HashMap<Symbol, HashSet<Symbol>> {
+pub fn compute_first_sets(grammar: &Grammar) -> BTreeMap<Symbol, BTreeSet<Symbol>> {
     // init empty first sets
-    let mut first_sets = HashMap::new();
+    let mut first_sets = BTreeMap::new();
     for nt in grammar.non_terminals() {
-        first_sets.insert(nt, HashSet::new());
+        first_sets.insert(nt, BTreeSet::new());
     }
     // repeat until no more changes occur
     loop {

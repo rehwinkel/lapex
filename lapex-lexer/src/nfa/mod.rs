@@ -1,4 +1,4 @@
-use std::{collections::HashSet, iter::Peekable};
+use std::{collections::BTreeSet, iter::Peekable};
 
 use lapex_automaton::{Nfa, StateId};
 
@@ -132,7 +132,7 @@ fn build_nfa_from_pattern<'rules>(
             chars: chars_vec,
             negated,
         } => {
-            let mut indices = HashSet::new();
+            let mut indices = BTreeSet::new();
             for chars in chars_vec {
                 match chars {
                     Characters::Single(ch) => {

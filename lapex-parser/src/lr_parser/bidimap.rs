@@ -1,8 +1,8 @@
-use std::{collections::HashMap, fmt::Debug, hash::Hash, rc::Rc};
+use std::{collections::BTreeMap, fmt::Debug, rc::Rc};
 
 pub struct BidiMap<A, B> {
-    a_b_map: HashMap<Rc<A>, Rc<B>>,
-    b_a_map: HashMap<Rc<B>, Rc<A>>,
+    a_b_map: BTreeMap<Rc<A>, Rc<B>>,
+    b_a_map: BTreeMap<Rc<B>, Rc<A>>,
 }
 
 impl<A: Debug, B: Debug> Debug for BidiMap<A, B> {
@@ -11,11 +11,11 @@ impl<A: Debug, B: Debug> Debug for BidiMap<A, B> {
     }
 }
 
-impl<A: Eq + PartialEq + Hash, B: Eq + PartialEq + Hash> BidiMap<A, B> {
+impl<A: Eq + PartialEq + Ord, B: Eq + PartialEq + Ord> BidiMap<A, B> {
     pub fn new() -> Self {
         BidiMap {
-            a_b_map: HashMap::new(),
-            b_a_map: HashMap::new(),
+            a_b_map: BTreeMap::new(),
+            b_a_map: BTreeMap::new(),
         }
     }
 

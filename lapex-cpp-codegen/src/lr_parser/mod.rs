@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::BTreeMap,
     io::{Error, Write},
 };
 
@@ -20,8 +20,8 @@ struct CodeWriter<'parser, 'rules> {
     parser_impl_header_template: Template<'static>,
     parser_impl_template: Template<'static>,
     visitor_header_template: Template<'static>,
-    rule_index_map: HashMap<*const Rule<'rules>, usize>,
-    rules_by_non_terminal: HashMap<Symbol, Vec<&'parser Rule<'rules>>>,
+    rule_index_map: BTreeMap<*const Rule<'rules>, usize>,
+    rules_by_non_terminal: BTreeMap<Symbol, Vec<&'parser Rule<'rules>>>,
 }
 
 impl<'grammar: 'rules, 'rules> CodeWriter<'grammar, 'rules> {
@@ -31,7 +31,7 @@ impl<'grammar: 'rules, 'rules> CodeWriter<'grammar, 'rules> {
         let parser_impl_template = Template::new(include_str!("parser.cpp.tpl"));
         let visitor_header_template = Template::new(include_str!("visitor.h.tpl"));
 
-        let mut rules_by_non_terminal = HashMap::new();
+        let mut rules_by_non_terminal = BTreeMap::new();
         for rule in grammar.rules() {
             if let Some(non_terminal) = rule.lhs() {
                 rules_by_non_terminal
@@ -40,7 +40,7 @@ impl<'grammar: 'rules, 'rules> CodeWriter<'grammar, 'rules> {
                     .push(rule);
             }
         }
-        let rule_index_map: HashMap<*const Rule, usize> = grammar
+        let rule_index_map: BTreeMap<*const Rule, usize> = grammar
             .rules()
             .iter()
             .enumerate()

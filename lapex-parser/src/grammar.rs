@@ -2,7 +2,6 @@ use std::{
     collections::BTreeMap,
     error::Error,
     fmt::{Debug, Display},
-    hash::Hash,
     num::TryFromIntError,
 };
 
@@ -32,7 +31,7 @@ impl From<TryFromIntError> for GrammarError {
     }
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Symbol {
     Epsilon,
     End,

@@ -1,4 +1,4 @@
-use std::{fmt::Display, hash::Hash};
+use std::fmt::Display;
 
 use lapex_input::{ProductionRule, Spanned};
 
@@ -133,14 +133,6 @@ impl<'grammar, 'rules, const N: usize> PartialEq for Item<'grammar, 'rules, N> {
 }
 
 impl<'grammar, 'rules, const N: usize> Eq for Item<'grammar, 'rules, N> {}
-
-impl<'grammar, 'rules, const N: usize> Hash for Item<'grammar, 'rules, N> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::ptr::hash(self.rule, state);
-        self.dot_position.hash(state);
-        self.lookahead.hash(state);
-    }
-}
 
 impl<'grammar, 'rules, const N: usize> PartialOrd for Item<'grammar, 'rules, N> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
