@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet},
     io::Write,
 };
 
@@ -16,13 +16,13 @@ use crate::{get_non_terminal_enum_name, get_token_enum_name};
 struct CodeWriter<'grammar, 'rules> {
     grammar: &'grammar Grammar<'grammar>,
     parser_table: &'grammar ActionGotoTable<'grammar, 'rules>,
-    rule_index_map: HashMap<*const Rule<'rules>, usize>,
-    rules_by_non_terminal: HashMap<Symbol, Vec<&'grammar Rule<'rules>>>,
+    rule_index_map: BTreeMap<*const Rule<'rules>, usize>,
+    rules_by_non_terminal: BTreeMap<Symbol, Vec<&'grammar Rule<'rules>>>,
 }
 
 impl<'grammar: 'rules, 'rules> CodeWriter<'grammar, 'rules> {
     fn new(grammar: &'grammar Grammar, parser_table: &'grammar ActionGotoTable) -> Self {
-        let mut rules_by_non_terminal = HashMap::new();
+        let mut rules_by_non_terminal = BTreeMap::new();
         for rule in grammar.rules() {
             if let Some(non_terminal) = rule.lhs() {
                 rules_by_non_terminal
@@ -31,7 +31,7 @@ impl<'grammar: 'rules, 'rules> CodeWriter<'grammar, 'rules> {
                     .push(rule);
             }
         }
-        let rule_index_map: HashMap<*const Rule, usize> = grammar
+        let rule_index_map: BTreeMap<*const Rule, usize> = grammar
             .rules()
             .iter()
             .enumerate()
@@ -97,6 +97,63 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
             pub trait Visitor<T> {
                 fn shift(&mut self, token: TokenType, data: T);
                 #(#reduce_functions)*
+            }
+        };
+        write!(output, "{}", tokens)
+    }
+
+    fn write_debug_visitor(&self, output: &mut dyn Write) -> std::io::Result<()> {
+        let mut reduce_functions: Vec<TokenStream> = Vec::new();
+
+        for (non_terminal, rules) in &self.rules_by_non_terminal {
+            let non_terminal_name = self.get_non_terminal_name(non_terminal);
+            if rules.len() != 1 {
+                for (i, rule) in rules.iter().enumerate() {
+                    let comment = format!("{}", rule.display(self.grammar));
+                    let function: TokenStream = format!("reduce_{}_{}", non_terminal_name, i + 1)
+                        .parse()
+                        .unwrap();
+                    reduce_functions.push(quote! {
+                        fn #function(&mut self) {
+                            println!(#comment);
+                        }
+                    });
+                }
+            } else {
+                let comment = format!("{}", rules[0].display(self.grammar));
+                let function: TokenStream =
+                    format!("reduce_{}", non_terminal_name).parse().unwrap();
+                reduce_functions.push(quote! {
+                    fn #function(&mut self) {
+                        println!(#comment);
+                    }
+                });
+            }
+        }
+
+        let tokens = quote! {
+            pub struct DebugVisitor {}
+
+            impl Visitor<()> for DebugVisitor {
+                fn shift(&mut self, token: TokenType, _data: ()) {
+                    println!("shift {:?}", token);
+                }
+
+                fn reduce_bla_1(&mut self) {
+                    println!("bla(0) -> A(1) B(0)");
+                }
+
+                fn reduce_bla_2(&mut self) {
+                    println!("bla(0) -> A(1)");
+                }
+
+                fn reduce_blas_1(&mut self) {
+                    println!("blas(2) -> bla(0)");
+                }
+
+                fn reduce_blas_2(&mut self) {
+                    println!("blas(2) -> bla(0) B(0) blas(2)");
+                }
             }
         };
         write!(output, "{}", tokens)
@@ -749,6 +806,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
             }
         )?;
         self.write_visitor(output)?;
+        self.write_debug_visitor(output)?;
         self.write_parser(output)?;
         Ok(())
     }
