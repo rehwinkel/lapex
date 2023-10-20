@@ -161,12 +161,12 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
             match entry {
                 TableEntry::Shift { target } => {
                     gotos.push(quote! {
-                        #condition => Goto::State { state_id: #target },
+                        #condition => Some(Goto::State { state_id: #target }),
                     });
                 }
                 TableEntry::Accept => {
                     gotos.push(quote! {
-                        #condition => Goto::Accept,
+                        #condition => Some(Goto::Accept),
                     });
                 }
                 _ => (),
@@ -365,7 +365,6 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
             enum StackSymbol {
                 Terminal { token: TokenType },
                 NonTerminal { non_terminal: NonTerminalType },
-                State { state_id: usize },
             }
 
             #[derive(Clone, Copy)]
@@ -383,12 +382,18 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                 State { state_id: usize }
             }
 
+            type StateId = usize;
+
             #[derive(Debug)]
             pub enum ParserError {
                 UnexpectedToken {
                     got: TokenType,
-                    expected: Vec<TokenType>
-                }
+                    expected: Vec<TokenType>,
+                },
+                UnexpectedTokens {
+                    got: Vec<TokenType>,
+                    expected: Vec<Vec<TokenType>>,
+                },
             }
 
             impl std::error::Error for ParserError {}
@@ -401,11 +406,34 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                             "Unexpected token {:?}, expected one of: {:?}",
                             got, expected
                         ),
+                        ParserError::UnexpectedTokens { got, expected } => {
+                            let errors: Vec<String> = got
+                                .iter()
+                                .zip(expected.iter())
+                                .map(|(got, expected)| {
+                                    format!(
+                                        "Unexpected token {:?}, expected one of: {:?}",
+                                        got, expected
+                                    )
+                                })
+                                .collect();
+                            write!(
+                                f,
+                                "Multiple diverging parse stacks reached unexpected ends:\n{}",
+                                errors.join("\n")
+                            )
+                        }
                     }
                 }
             }
 
-            impl<T, F: FnMut() -> (TokenType, T), V: Visitor<T>> Parser<T, F, V> {
+            #[derive(Clone)]
+            enum RecordedVisit<T> {
+                Reduce { rule: ReducedRule },
+                Shift { token: TokenType, data: T },
+            }
+
+            impl<T: Clone, F: FnMut() -> (TokenType, T), V: Visitor<T>> Parser<T, F, V> {
                 pub fn new(token_function: F, visitor: V) -> Self {
                     Parser {
                         token_function,
@@ -420,22 +448,20 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     }
                 }
 
-                fn next_goto(&self, state: usize, symbol: StackSymbol) -> Goto {
+                fn next_goto(&self, state: &usize, symbol: &StackSymbol) -> Option<Goto> {
                     match (state, symbol) {
                         #(#gotos)*
-                        (_, _) => unreachable!()
+                        (_, _) => None,
                     }
                 }
 
-                fn reduce_stack_and_visit(&mut self, rule: &ReducedRule, stack: &mut Vec<StackSymbol>) {
-                    let (to_pop, reduced) = match rule {
+                fn get_rule_reduction(&self, rule: &ReducedRule) -> (usize, StackSymbol) {
+                    match rule {
                         #(#rule_reductions),*
-                    };
-                    for _ in 0..to_pop {
-                        stack.pop().unwrap();
-                        stack.pop().unwrap();
                     }
-                    stack.push(reduced);
+                }
+
+                fn do_visit(&mut self, rule: &ReducedRule) {
                     match rule {
                         #(#rule_visits),*
                     }
@@ -445,48 +471,269 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     let mut lookahead = std::collections::VecDeque::new();
                     lookahead.push_back((self.token_function)());
 
-                    let mut stack = Vec::new();
-                    stack.push(StackSymbol::State { state_id: #entry });
+                    let root = GraphNode::root();
+                    let stack = root.push(Some(#entry), None);
+                    let mut stacks = vec![stack];
 
-                    while !stack.is_empty() {
+                    while !(stacks.len() == 1 && stacks[0].is_root()) {
                         let (next_token, _) = lookahead.front().unwrap();
-                        let state = match stack.last().unwrap() {
-                            StackSymbol::State { state_id } => *state_id,
-                            _ => unreachable!()
-                        };
-                        let actions = self.next_actions(state, *next_token)?;
-                        match actions {
-                            [Action::Shift] => {
-                                let (next_token, next_data) = lookahead.pop_front().unwrap();
-                                stack.push(StackSymbol::Terminal { token: next_token });
-                                self.visitor.shift(next_token, next_data);
+                        let reduced = self
+                            .apply_reduces(stacks, next_token)
+                            .map_err(combine_errors)?;
 
-                                lookahead.push_back((self.token_function)());
+                        let (next_token, next_data) = lookahead.pop_front().unwrap();
+                        let new_symbol = StackSymbol::Terminal { token: next_token };
+                        lookahead.push_back((self.token_function)());
+
+                        let mut new_stacks = if reduced.iter().any(|s| s.top().is_none()) {
+                            reduced
+                        } else {
+                            let mut new_stacks = Vec::new();
+                            for stack in reduced {
+                                let state = *stack.top().unwrap();
+                                match self.next_goto(&state, &new_symbol) {
+                                    Some(Goto::State { state_id }) => {
+                                        stack.record(RecordedVisit::Shift {
+                                            token: next_token,
+                                            data: next_data.clone(),
+                                        });
+                                        let new_node = stack.push(Some(state_id), Some(new_symbol));
+                                        new_stacks.push(new_node);
+                                    }
+                                    Some(Goto::Accept) => unreachable!(),
+                                    None => (),
+                                }
                             }
-                            [Action::Reduce { rule: reduced_rule }] => {
-                                self.reduce_stack_and_visit(reduced_rule, &mut stack);
-                            }
-                            [..] => {
-                                todo!("multiple actions")
-                            }
-                        }
-                        let current_symbol = stack.last().unwrap();
-                        let state = match &stack[stack.len() - 2] {
-                            StackSymbol::State { state_id } => *state_id,
-                            _ => unreachable!()
+                            new_stacks
                         };
-                        let goto = self.next_goto(state, *current_symbol);
-                        match goto {
-                            Goto::Accept => {
-                                stack.pop();
-                                stack.pop();
+                        if new_stacks.len() == 1 {
+                            let stack = new_stacks.pop().unwrap();
+                            let recorded = stack.pop_recorded();
+                            for record in recorded {
+                                match record {
+                                    RecordedVisit::Reduce { rule } => self.do_visit(&rule),
+                                    RecordedVisit::Shift { token, data } => self.visitor.shift(token, data),
+                                }
                             }
-                            Goto::State { state_id } => {
-                                stack.push(StackSymbol::State { state_id })
-                            }
+                            stacks = vec![stack];
+                        } else {
+                            stacks = new_stacks;
                         }
                     }
                     Ok(())
+                }
+
+                fn apply_reduces(
+                    &mut self,
+                    stacks: Vec<GraphNode<usize, StackSymbol, RecordedVisit<T>>>,
+                    next_token: &TokenType,
+                ) -> Result<Vec<GraphNode<usize, StackSymbol, RecordedVisit<T>>>, Vec<ParserError>> {
+                    let mut to_reduce = stacks;
+                    let mut reduced = Vec::new();
+                    while !to_reduce.is_empty() {
+                        let mut errors = Vec::new();
+                        let all_error_count = to_reduce.len();
+                        let mut new_to_reduce = Vec::new();
+                        'stacks: for stack in to_reduce {
+                            let state = *stack.top().unwrap();
+                            match self.next_actions(state, next_token.clone()) {
+                                Ok(actions) => {
+                                    for action in actions {
+                                        match action {
+                                            Action::Reduce { rule: reduced_rule } => {
+                                                self.apply_reduce(
+                                                    reduced_rule,
+                                                    &stack,
+                                                    &mut reduced,
+                                                    &mut new_to_reduce,
+                                                );
+                                            }
+                                            Action::Shift => {
+                                                reduced.push(stack);
+                                                continue 'stacks;
+                                            }
+                                        };
+                                    }
+                                }
+                                Err(e) => {
+                                    errors.push(e);
+                                }
+                            }
+                        }
+                        // if all reduces errored, the parser must have encountered an error
+                        if errors.len() == all_error_count {
+                            return Err(errors);
+                        }
+                        to_reduce = new_to_reduce;
+                    }
+                    Ok(reduced)
+                }
+
+                fn apply_reduce(
+                    &mut self,
+                    reduced_rule: &ReducedRule,
+                    stack: &GraphNode<usize, StackSymbol, RecordedVisit<T>>,
+                    accepted: &mut Vec<GraphNode<StateId, StackSymbol, RecordedVisit<T>>>,
+                    new_to_reduce: &mut Vec<GraphNode<usize, StackSymbol, RecordedVisit<T>>>,
+                ) {
+                    let (to_pop, reduced_symbol) = self.get_rule_reduction(&reduced_rule);
+                    let stacks_to_push = stack.unwind_stacks(to_pop);
+                    for mut stack in stacks_to_push {
+                        stack.record(RecordedVisit::Reduce {
+                            rule: reduced_rule.clone(),
+                        });
+                        // remove reduced symbols
+                        for _ in 0..to_pop {
+                            let (_edge, new_stack) = stack.pop();
+                            stack = new_stack;
+                        }
+                        let state = *stack.top().unwrap();
+                        match self.next_goto(&state, &reduced_symbol) {
+                            Some(Goto::State { state_id }) => {
+                                // push new non-terminal
+                                let new_node = stack.push(Some(state_id), Some(reduced_symbol));
+                                new_to_reduce.push(new_node);
+                            }
+                            Some(Goto::Accept) => {
+                                let (_edge, root) = stack.pop();
+                                accepted.push(root);
+                            }
+                            None => (),
+                        }
+                    }
+                }
+            }
+
+            fn combine_errors(mut errors: Vec<ParserError>) -> ParserError {
+                match errors.len() {
+                    1 => errors.pop().unwrap(),
+                    0 => unreachable!(),
+                    _ => {
+                        let (got, expected): (Vec<TokenType>, Vec<Vec<TokenType>>) = errors
+                            .into_iter()
+                            .map(|e| match e {
+                                ParserError::UnexpectedToken { got, expected } => (got, expected),
+                                _ => unreachable!(),
+                            })
+                            .unzip();
+                        ParserError::UnexpectedTokens { got, expected }
+                    }
+                }
+            }
+
+            use gss::GraphNode;
+
+            mod gss {
+                use std::{
+                    cell::{Ref, RefCell},
+                    rc::Rc,
+                };
+
+                pub struct GraphNode<N, E, R> {
+                    inner: Rc<RefCell<GraphNodeInner<N, E, R>>>,
+                    recorded: Rc<RefCell<Vec<R>>>,
+                }
+
+                impl<N: Clone, E: Clone, R: Clone> GraphNode<N, E, R> {
+                    pub fn clone_and_fork_record(&self) -> Self {
+                        GraphNode {
+                            inner: self.inner.clone(),
+                            recorded: Rc::new(RefCell::new(self.recorded.borrow().clone())),
+                        }
+                    }
+
+                    pub fn unwind_stacks(&self, depth: usize) -> Vec<Self> {
+                        if depth == 0 {
+                            return vec![self.clone_and_fork_record()];
+                        }
+                        let mut resulting_parents = Vec::new();
+                        let value = self.top().map(|r| r.clone());
+                        for (edge, neighbor) in self.neighbors().iter() {
+                            let new_parents = neighbor.unwind_stacks(depth - 1);
+                            for parent in new_parents {
+                                let mut new_node = parent.push(value.clone(), edge.clone());
+                                new_node.recorded = self.recorded.clone();
+                                resulting_parents.push(new_node.clone_and_fork_record());
+                            }
+                        }
+                        resulting_parents
+                    }
+                }
+
+                impl<N, E, R> GraphNode<N, E, R> {
+                    pub fn root() -> Self {
+                        GraphNode {
+                            inner: Rc::new(RefCell::new(GraphNodeInner {
+                                node_value: None,
+                                neighbors: vec![],
+                            })),
+                            recorded: Rc::new(RefCell::new(Vec::new())),
+                        }
+                    }
+
+                    fn add_edge(&mut self, value: Option<E>, predecessor: GraphNode<N, E, R>) {
+                        self.inner.borrow_mut().neighbors.push((value, predecessor));
+                    }
+
+                    pub fn top(&self) -> Option<Ref<N>> {
+                        let opt = Ref::filter_map(self.inner.borrow(), |i| i.node_value.as_ref());
+                        match opt {
+                            Ok(r) => Some(r),
+                            Err(_) => None,
+                        }
+                    }
+
+                    fn neighbors(&self) -> Ref<[(Option<E>, GraphNode<N, E, R>)]> {
+                        Ref::map(self.inner.borrow(), |i| i.neighbors.as_slice())
+                    }
+
+                    pub fn pop(self) -> (Option<E>, Self) {
+                        let neighbors = &mut self.inner.borrow_mut().neighbors;
+                        assert_eq!(
+                            neighbors.len(),
+                            1,
+                            "Tried to pop from stack branch with more/less than one predecessor"
+                        );
+                        if let Some((e, mut node)) = neighbors.pop() {
+                            node.recorded = self.recorded;
+                            (e, node)
+                        } else {
+                            panic!("Tried to pop from stack branch with zero predecessors");
+                        }
+                    }
+
+                    pub fn pop_recorded(&self) -> Vec<R> {
+                        return self.recorded.borrow_mut().split_off(0);
+                    }
+
+                    pub fn record(&self, record: R) {
+                        self.recorded.borrow_mut().push(record);
+                    }
+
+                    pub fn is_root(&self) -> bool {
+                        self.inner.borrow().node_value.is_none()
+                    }
+
+                    pub fn push(self, value: Option<N>, edge: Option<E>) -> GraphNode<N, E, R> {
+                        let mut new_node = self.new_with_same_record(value);
+                        new_node.add_edge(edge, self);
+                        new_node
+                    }
+
+                    fn new_with_same_record(&self, node_value: Option<N>) -> Self {
+                        GraphNode {
+                            inner: Rc::new(RefCell::new(GraphNodeInner {
+                                node_value,
+                                neighbors: vec![],
+                            })),
+                            recorded: self.recorded.clone(),
+                        }
+                    }
+                }
+
+                struct GraphNodeInner<N, E, R> {
+                    node_value: Option<N>,
+                    neighbors: Vec<(Option<E>, GraphNode<N, E, R>)>,
                 }
             }
         };
