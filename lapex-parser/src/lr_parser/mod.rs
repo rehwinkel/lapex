@@ -233,21 +233,21 @@ fn merge_into_state<'grammar: 'rules, 'rules, const N: usize>(
     })
 }
 
-#[derive(Debug)]
-pub enum Conflict<'grammar, 'rules, const N: usize> {
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Conflict<'grammar, 'rules> {
     ShiftReduce {
-        item_to_reduce: Item<'grammar, 'rules, N>,
+        item_to_reduce: Item<'grammar, 'rules, 0>,
         shift_symbol: Symbol,
     },
     ReduceReduce {
-        items: Vec<Item<'grammar, 'rules, N>>,
+        items: Vec<Item<'grammar, 'rules, 0>>,
     },
 }
 
 fn find_conflicts<'grammar, 'rules, const N: usize>(
     parser_graph: &ParserGraph<'grammar, 'rules, N>,
-) -> Vec<Conflict<'grammar, 'rules, N>> {
-    let mut conflicts = Vec::new();
+) -> BTreeSet<Conflict<'grammar, 'rules>> {
+    let mut conflicts = BTreeSet::new();
     for (item_set, state) in parser_graph.state_map.iter() {
         let mut reducing_items: BTreeMap<[Symbol; N], Vec<&Item<N>>> = BTreeMap::new();
         for item in item_set {
@@ -260,8 +260,8 @@ fn find_conflicts<'grammar, 'rules, const N: usize>(
         }
         for (lookahead, reducing_items) in reducing_items {
             if reducing_items.len() > 1 {
-                conflicts.push(Conflict::ReduceReduce {
-                    items: reducing_items.into_iter().map(|i| i.clone()).collect(),
+                conflicts.insert(Conflict::ReduceReduce {
+                    items: reducing_items.into_iter().map(|i| i.to_lr0()).collect(),
                 });
             } else if reducing_items.len() == 1 {
                 let outgoing_edges = parser_graph.graph.edges_directed(*state, Outgoing);
@@ -270,16 +270,24 @@ fn find_conflicts<'grammar, 'rules, const N: usize>(
                         panic!("LR(N) with N > 1 not supported");
                     } else if N == 1 {
                         if lookahead[0] == *edge.weight() {
-                            conflicts.push(Conflict::ShiftReduce {
-                                item_to_reduce: reducing_items.first().map(|i| *i).unwrap().clone(),
+                            conflicts.insert(Conflict::ShiftReduce {
+                                item_to_reduce: reducing_items
+                                    .first()
+                                    .map(|i| i.to_lr0())
+                                    .unwrap()
+                                    .clone(),
                                 shift_symbol: *edge.weight(),
-                            })
+                            });
                         }
                     } else {
-                        conflicts.push(Conflict::ShiftReduce {
-                            item_to_reduce: reducing_items.first().map(|i| *i).unwrap().clone(),
+                        conflicts.insert(Conflict::ShiftReduce {
+                            item_to_reduce: reducing_items
+                                .first()
+                                .map(|i| i.to_lr0())
+                                .unwrap()
+                                .clone(),
                             shift_symbol: *edge.weight(),
-                        })
+                        });
                     }
                 }
             }
@@ -405,9 +413,9 @@ pub enum GenerationResult<'grammar, 'rules, const N: usize> {
     NoConflicts(ActionGotoTable<'grammar, 'rules>),
     AllowedConflicts {
         table: ActionGotoTable<'grammar, 'rules>,
-        conflicts: Vec<Conflict<'grammar, 'rules, N>>,
+        conflicts: Vec<Conflict<'grammar, 'rules>>,
     },
-    BadConflicts(Vec<Conflict<'grammar, 'rules, N>>),
+    BadConflicts(Vec<Conflict<'grammar, 'rules>>),
 }
 
 pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
@@ -420,8 +428,8 @@ pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
     } else {
         BTreeMap::new()
     };
-    let parser_graph = generate_parser_graph(grammar, &first_sets, lalr);
-    let conflicts = find_conflicts(&parser_graph);
+    let parser_graph = generate_parser_graph::<N>(grammar, &first_sets, lalr);
+    let conflicts: Vec<Conflict> = find_conflicts(&parser_graph).into_iter().collect();
     if !allow_conflicts && !conflicts.is_empty() {
         return GenerationResult::BadConflicts(conflicts);
     }
