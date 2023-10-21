@@ -34,6 +34,20 @@ impl<A: Eq + PartialEq + Ord, B: Eq + PartialEq + Ord> BidiMap<A, B> {
         self.b_a_map.get(b).map(|rc| rc.as_ref())
     }
 
+    pub fn remove_by_b(&mut self, b: &B) -> Option<(A, B)> {
+        let a_rc = self.b_a_map.remove(b)?;
+        let b_rc = self.a_b_map.remove(a_rc.as_ref())?;
+        match (Rc::try_unwrap(a_rc), Rc::try_unwrap(b_rc)) {
+            (Ok(a), Ok(b)) => Some((a, b)),
+            (Err(a_rc), Err(b_rc)) => {
+                self.a_b_map.insert(a_rc.clone(), b_rc.clone());
+                self.b_a_map.insert(b_rc, a_rc);
+                None
+            }
+            _ => unreachable!(),
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&A, &B)> {
         self.a_b_map.iter().map(|(a, b)| (a.as_ref(), b.as_ref()))
     }

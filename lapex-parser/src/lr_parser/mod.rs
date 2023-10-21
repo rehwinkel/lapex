@@ -23,6 +23,12 @@ use item::Item;
 
 type ItemSet<'grammar, 'rules, const N: usize> = BTreeSet<Item<'grammar, 'rules, N>>;
 
+fn get_lr0_core<'grammar, 'rules, const N: usize>(
+    item_set: &ItemSet<'grammar, 'rules, N>,
+) -> ItemSet<'grammar, 'rules, 0> {
+    item_set.into_iter().map(|item| item.to_lr0()).collect()
+}
+
 fn expand_item<'grammar: 'rules, 'rules, const N: usize>(
     item: Item<'grammar, 'rules, N>,
     grammar: &'grammar Grammar,
@@ -93,6 +99,7 @@ fn determine_lookaheads_to_expand<const N: usize>(
 
 struct ParserGraph<'grammar: 'rules, 'rules, const N: usize> {
     state_map: BidiMap<ItemSet<'grammar, 'rules, N>, NodeIndex>,
+    lr0_core_map: BTreeMap<ItemSet<'grammar, 'rules, 0>, NodeIndex>,
     graph: Graph<(), Symbol>,
     entry_state: Option<NodeIndex>,
 }
@@ -101,6 +108,7 @@ impl<'grammar, 'rules, const N: usize> ParserGraph<'grammar, 'rules, N> {
     fn new() -> Self {
         ParserGraph {
             state_map: BidiMap::new(),
+            lr0_core_map: BTreeMap::new(),
             graph: DiGraph::new(),
             entry_state: None,
         }
@@ -108,6 +116,8 @@ impl<'grammar, 'rules, const N: usize> ParserGraph<'grammar, 'rules, N> {
 
     fn add_state(&mut self, set: ItemSet<'grammar, 'rules, N>) -> NodeIndex {
         let entry_node = self.graph.add_node(());
+        self.lr0_core_map
+            .insert(get_lr0_core(&set), entry_node.clone());
         self.state_map.insert(set, entry_node);
         entry_node
     }
@@ -116,8 +126,23 @@ impl<'grammar, 'rules, const N: usize> ParserGraph<'grammar, 'rules, N> {
         self.state_map.get_b_to_a(state)
     }
 
+    fn update_item_set<R, F>(&mut self, state: &NodeIndex, op: F) -> Option<R>
+    where
+        F: FnOnce(&mut ItemSet<'grammar, 'rules, N>) -> R,
+    {
+        let (mut set, state) = self.state_map.remove_by_b(state)?;
+        let return_value = op(&mut set);
+        self.lr0_core_map.insert(get_lr0_core(&set), state.clone());
+        self.state_map.insert(set, state);
+        Some(return_value)
+    }
+
     fn get_state(&self, set: &ItemSet<'grammar, 'rules, N>) -> Option<&NodeIndex> {
         self.state_map.get_a_to_b(set)
+    }
+
+    fn get_state_by_lr0_core(&self, set: &ItemSet<'grammar, 'rules, N>) -> Option<&NodeIndex> {
+        self.lr0_core_map.get(&get_lr0_core(set))
     }
 
     fn add_transition(
@@ -133,6 +158,7 @@ impl<'grammar, 'rules, const N: usize> ParserGraph<'grammar, 'rules, N> {
 fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
     grammar: &'grammar Grammar<'rules>,
     first_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
+    lalr: bool,
 ) -> ParserGraph<'grammar, 'rules, N> {
     let entry_item = Item::new(grammar.entry_rule(), [Symbol::End; N]);
     let entry_item_set = expand_item(entry_item, grammar, first_sets);
@@ -160,17 +186,51 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
             }
         }
         for (edge, item_set) in transition_map {
-            let target_state = if let Some(state) = parser_graph.get_state(&item_set) {
-                *state
+            if lalr {
+                let target_state = if let Some(state) =
+                    parser_graph.get_state_by_lr0_core(&item_set).map(|s| *s)
+                {
+                    let merged = merge_into_state(&mut parser_graph, state, item_set).unwrap();
+                    if merged {
+                        unprocessed_states.push(state);
+                    }
+                    state
+                } else {
+                    let state = parser_graph.add_state(item_set);
+                    unprocessed_states.push(state);
+                    state
+                };
+                parser_graph.add_transition(start_state, target_state, edge);
             } else {
-                let state = parser_graph.add_state(item_set);
-                unprocessed_states.push(state);
-                state
-            };
-            parser_graph.add_transition(start_state, target_state, edge);
+                let target_state = if let Some(state) = parser_graph.get_state(&item_set) {
+                    *state
+                } else {
+                    let state = parser_graph.add_state(item_set);
+                    unprocessed_states.push(state);
+                    state
+                };
+                parser_graph.add_transition(start_state, target_state, edge);
+            }
         }
     }
     parser_graph
+}
+
+fn merge_into_state<'grammar: 'rules, 'rules, const N: usize>(
+    parser_graph: &mut ParserGraph<'grammar, 'rules, N>,
+    state: NodeIndex,
+    item_set: BTreeSet<Item<'grammar, 'rules, N>>,
+) -> Option<bool> {
+    parser_graph.update_item_set(&state, |update| {
+        let mut reprocess = false;
+        for item in item_set {
+            let inserted = update.insert(item);
+            if inserted {
+                reprocess = true;
+            }
+        }
+        reprocess
+    })
 }
 
 #[derive(Debug)]
@@ -353,20 +413,35 @@ pub enum GenerationResult<'grammar, 'rules, const N: usize> {
 pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
     grammar: &'grammar Grammar<'rules>,
     allow_conflicts: bool,
+    lalr: bool,
 ) -> GenerationResult<'grammar, 'rules, N> {
     let first_sets = if N > 0 {
         compute_first_sets(grammar)
     } else {
         BTreeMap::new()
     };
-    let parser_graph = generate_parser_graph(grammar, &first_sets);
+    let parser_graph = generate_parser_graph(grammar, &first_sets, lalr);
     let conflicts = find_conflicts(&parser_graph);
     if !allow_conflicts && !conflicts.is_empty() {
         return GenerationResult::BadConflicts(conflicts);
     }
 
+    let table = build_table(parser_graph, grammar);
+
+    if conflicts.is_empty() {
+        GenerationResult::NoConflicts(table)
+    } else {
+        GenerationResult::AllowedConflicts { table, conflicts }
+    }
+}
+
+fn build_table<'grammar, 'rules, const N: usize>(
+    parser_graph: ParserGraph<'grammar, 'rules, N>,
+    grammar: &Grammar<'rules>,
+) -> ActionGotoTable<'grammar, 'rules> {
     let entry_state = parser_graph.entry_state.unwrap().index();
     let node_count = parser_graph.graph.node_indices().count();
+
     let mut table: ActionGotoTable<'grammar, 'rules> =
         ActionGotoTable::new(node_count, entry_state);
     for (item_set, state) in parser_graph.state_map.iter() {
@@ -405,12 +480,7 @@ pub fn generate_table<'grammar: 'rules, 'rules, const N: usize>(
             }
         }
     }
-
-    if conflicts.is_empty() {
-        GenerationResult::NoConflicts(table)
-    } else {
-        GenerationResult::AllowedConflicts { table, conflicts }
-    }
+    table
 }
 
 pub fn output_table<'grammar, 'rules>(

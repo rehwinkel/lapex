@@ -74,6 +74,14 @@ impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
         }
     }
 
+    pub fn to_lr0(&self) -> Item<'grammar, 'rules, 0> {
+        Item {
+            dot_position: self.dot_position,
+            rule: self.rule,
+            lookahead: [],
+        }
+    }
+
     pub fn lookahead(&self) -> &[Symbol; N] {
         &self.lookahead
     }

@@ -19,11 +19,12 @@ use lapex_rust_codegen::{
 
 mod errors;
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
 pub enum ParsingAlgorithm {
     LL1,
     LR0,
     LR1,
+    LALR,
     GLR,
 }
 
@@ -36,6 +37,7 @@ impl Display for ParsingAlgorithm {
                 ParsingAlgorithm::LL1 => "ll1",
                 ParsingAlgorithm::LR0 => "lr0",
                 ParsingAlgorithm::LR1 => "lr1",
+                ParsingAlgorithm::LALR => "lalr",
                 ParsingAlgorithm::GLR => "glr",
             }
         )
@@ -153,19 +155,20 @@ where
             ll_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
         ParsingAlgorithm::LR0 => {
-            let parser_table = match lapex_parser::lr_parser::generate_table::<0>(&grammar, false) {
-                GenerationResult::NoConflicts(val) => val,
-                GenerationResult::BadConflicts(conflicts) => {
-                    return Err(LapexError::conflicts(
-                        grammar_path,
-                        file_contents.as_str(),
-                        &conflicts,
-                        &grammar,
-                    )
-                    .into());
-                }
-                _ => unreachable!(),
-            };
+            let parser_table =
+                match lapex_parser::lr_parser::generate_table::<0>(&grammar, false, false) {
+                    GenerationResult::NoConflicts(val) => val,
+                    GenerationResult::BadConflicts(conflicts) => {
+                        return Err(LapexError::conflicts(
+                            grammar_path,
+                            file_contents.as_str(),
+                            &conflicts,
+                            &grammar,
+                        )
+                        .into());
+                    }
+                    _ => unreachable!(),
+                };
             if generate_table {
                 gen.generate_code("table", |output| {
                     lapex_parser::lr_parser::output_table(&grammar, &parser_table, output)
@@ -174,8 +177,12 @@ where
             }
             lr_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
-        ParsingAlgorithm::LR1 => {
-            let parser_table = match lapex_parser::lr_parser::generate_table::<1>(&grammar, false) {
+        ParsingAlgorithm::LALR | ParsingAlgorithm::LR1 => {
+            let parser_table = match lapex_parser::lr_parser::generate_table::<1>(
+                &grammar,
+                false,
+                algorithm == ParsingAlgorithm::LALR,
+            ) {
                 GenerationResult::NoConflicts(val) => val,
                 GenerationResult::BadConflicts(conflicts) => {
                     return Err(LapexError::conflicts(
@@ -197,20 +204,21 @@ where
             lr_codegen.generate_code(&grammar, &parser_table, &mut gen);
         }
         ParsingAlgorithm::GLR => {
-            let parser_table = match lapex_parser::lr_parser::generate_table::<1>(&grammar, true) {
-                GenerationResult::NoConflicts(table) => {
-                    // TODO: info about using LR1 instead
-                    table
-                }
-                GenerationResult::AllowedConflicts {
-                    table,
-                    conflicts: _conflicts,
-                } => {
-                    // TODO: info about conflicts
-                    table
-                }
-                _ => unreachable!(),
-            };
+            let parser_table =
+                match lapex_parser::lr_parser::generate_table::<1>(&grammar, true, true) {
+                    GenerationResult::NoConflicts(table) => {
+                        // TODO: info about using LR1 instead
+                        table
+                    }
+                    GenerationResult::AllowedConflicts {
+                        table,
+                        conflicts: _conflicts,
+                    } => {
+                        // TODO: info about conflicts
+                        table
+                    }
+                    _ => unreachable!(),
+                };
             if generate_table {
                 gen.generate_code("table", |output| {
                     lapex_parser::lr_parser::output_table(&grammar, &parser_table, output)
