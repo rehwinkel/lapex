@@ -236,10 +236,12 @@ fn merge_into_state<'grammar: 'rules, 'rules, const N: usize>(
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Conflict<'grammar, 'rules> {
     ShiftReduce {
+        state: usize,
         item_to_reduce: Item<'grammar, 'rules, 0>,
         shift_symbol: Symbol,
     },
     ReduceReduce {
+        state: usize,
         items: Vec<Item<'grammar, 'rules, 0>>,
     },
 }
@@ -261,6 +263,7 @@ fn find_conflicts<'grammar, 'rules, const N: usize>(
         for (lookahead, reducing_items) in reducing_items {
             if reducing_items.len() > 1 {
                 conflicts.insert(Conflict::ReduceReduce {
+                    state: state.index(),
                     items: reducing_items.into_iter().map(|i| i.to_lr0()).collect(),
                 });
             } else if reducing_items.len() == 1 {
@@ -271,6 +274,7 @@ fn find_conflicts<'grammar, 'rules, const N: usize>(
                     } else if N == 1 {
                         if lookahead[0] == *edge.weight() {
                             conflicts.insert(Conflict::ShiftReduce {
+                                state: state.index(),
                                 item_to_reduce: reducing_items
                                     .first()
                                     .map(|i| i.to_lr0())
@@ -281,6 +285,7 @@ fn find_conflicts<'grammar, 'rules, const N: usize>(
                         }
                     } else {
                         conflicts.insert(Conflict::ShiftReduce {
+                            state: state.index(),
                             item_to_reduce: reducing_items
                                 .first()
                                 .map(|i| i.to_lr0())

@@ -50,6 +50,7 @@ pub struct LapexError {
 #[derive(Debug)]
 enum LapexErrorType {
     ShiftReduce {
+        state: usize,
         symbol_name: String,
         location: Location,
         item_text: String,
@@ -58,6 +59,7 @@ enum LapexErrorType {
         rules: Vec<(Location, String)>,
     },
     ReduceReduce {
+        state: usize,
         items: Vec<(Location, String)>,
     },
     IO {
@@ -77,6 +79,7 @@ impl LapexError {
             .iter()
             .map(|c| match c {
                 Conflict::ShiftReduce {
+                    state,
                     item_to_reduce,
                     shift_symbol,
                 } => {
@@ -87,6 +90,7 @@ impl LapexError {
                     LapexError {
                         severity: Severity::Error,
                         error: LapexErrorType::ShiftReduce {
+                            state: *state,
                             symbol_name,
                             location: Location::from_span(
                                 item_to_reduce.production().span,
@@ -98,9 +102,10 @@ impl LapexError {
                         },
                     }
                 }
-                Conflict::ReduceReduce { items } => LapexError {
+                Conflict::ReduceReduce { state, items } => LapexError {
                     severity: Severity::Error,
                     error: LapexErrorType::ReduceReduce {
+                        state: *state,
                         items: items
                             .iter()
                             .map(|item| {
@@ -158,13 +163,15 @@ impl Display for LapexErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LapexErrorType::ShiftReduce {
+                state,
                 symbol_name,
                 location,
                 item_text,
             } => write_section(
                 location,
                 format_args!(
-                    "Could shift token\n\t{}\nOr reduce item\n\t{}",
+                    "In state {}:\nCould shift token\n\t{}\nOr reduce item\n\t{}",
+                    state.bold(),
                     symbol_name.bold(),
                     item_text.bold()
                 ),
@@ -183,11 +190,15 @@ impl Display for LapexErrorType {
                 }
                 Ok(())
             }
-            LapexErrorType::ReduceReduce { items } => {
+            LapexErrorType::ReduceReduce { state, items } => {
                 for (i, (location, item_text)) in items.iter().enumerate() {
                     write_section(
                         location,
-                        format_args!("Could reduce this item:\n\t{}", item_text.bold()),
+                        format_args!(
+                            "In state {}:\nCould reduce this item:\n\t{}",
+                            state.bold(),
+                            item_text.bold()
+                        ),
                         f,
                     )?;
                     if i + 1 < items.len() {
