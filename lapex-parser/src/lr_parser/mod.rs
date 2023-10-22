@@ -176,7 +176,7 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
 
     while let Some(start_state) = unprocessed_states.pop() {
         let item_set = parser_graph.get_item_set(&start_state).unwrap();
-        let mut transition_map: HashMap<Symbol, ItemSet<'grammar, 'rules, N>> = HashMap::new();
+        let mut transition_map: BTreeMap<Symbol, ItemSet<'grammar, 'rules, N>> = BTreeMap::new();
         for item in item_set {
             if let Some(transition_symbol) = item.symbol_after_dot() {
                 let mut target_item = item.clone();

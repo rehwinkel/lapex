@@ -1,6 +1,6 @@
-use std::{collections::HashMap, fmt::Debug, hash::Hash, rc::Rc};
+use std::{collections::BTreeMap, fmt::Debug, rc::Rc};
 
-type InnerMap<K, V> = HashMap<K, V>;
+type InnerMap<K, V> = BTreeMap<K, V>;
 
 pub struct BidiMap<A, B> {
     a_b_map: InnerMap<Rc<A>, Rc<B>>,
@@ -13,7 +13,7 @@ impl<A: Debug, B: Debug> Debug for BidiMap<A, B> {
     }
 }
 
-impl<A: Eq + PartialEq + Hash, B: Eq + PartialEq + Hash> BidiMap<A, B> {
+impl<A: Eq + PartialEq + Ord, B: Eq + PartialEq + Ord> BidiMap<A, B> {
     pub fn new() -> Self {
         BidiMap {
             a_b_map: InnerMap::new(),
