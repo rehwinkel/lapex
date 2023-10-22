@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::Display,
     io::Write,
 };
@@ -29,22 +29,23 @@ fn get_lr0_core<'grammar, 'rules, const N: usize>(
     item_set.into_iter().map(|item| item.to_lr0()).collect()
 }
 
-fn expand_item<'grammar: 'rules, 'rules, const N: usize>(
+fn expand_item<'grammar: 'rules, 'rules, 'a, const N: usize>(
     item: Item<'grammar, 'rules, N>,
-    grammar: &'grammar Grammar,
+    rules_map: &BTreeMap<Symbol, Vec<&'grammar Rule>>,
     first_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
-) -> ItemSet<'grammar, 'rules, N> {
-    let mut item_set: ItemSet<'grammar, 'rules, N> = BTreeSet::new();
-    let mut to_expand: Vec<Item<N>> = Vec::new();
-    item_set.insert(item.clone());
-    to_expand.push(item);
-    while !to_expand.is_empty() {
-        let top = to_expand.pop().unwrap(); // stack is not empty so pop always works
-        if let Some(symbol_after_dot) = top.symbol_after_dot() {
-            for rule in grammar.rules() {
-                // since LHS is always nonterminal, no additional check is needed
-                if let Some(lhs) = rule.lhs() {
-                    if lhs == symbol_after_dot {
+    item_set_cache: &'a mut HashMap<Item<'grammar, 'rules, N>, ItemSet<'grammar, 'rules, N>>,
+) -> &'a ItemSet<'grammar, 'rules, N> {
+    item_set_cache.entry(item.clone()).or_insert_with(|| {
+        let mut item_set: ItemSet<'grammar, 'rules, N> = ItemSet::new();
+        let mut to_expand: Vec<Item<N>> = Vec::new();
+        item_set.insert(item.clone());
+        to_expand.push(item.clone());
+        while !to_expand.is_empty() {
+            let top = to_expand.pop().unwrap(); // stack is not empty so pop always works
+            if let Some(symbol_after_dot) = top.symbol_after_dot() {
+                if let Some(rules) = rules_map.get(&symbol_after_dot) {
+                    for rule in rules {
+                        // since LHS is always nonterminal, no additional check is needed
                         let lookaheads = determine_lookaheads_to_expand(&top, first_sets, &top);
 
                         for lookahead in lookaheads {
@@ -61,8 +62,8 @@ fn expand_item<'grammar: 'rules, 'rules, const N: usize>(
                 }
             }
         }
-    }
-    item_set
+        item_set
+    })
 }
 
 fn determine_lookaheads_to_expand<const N: usize>(
@@ -99,7 +100,7 @@ fn determine_lookaheads_to_expand<const N: usize>(
 
 struct ParserGraph<'grammar: 'rules, 'rules, const N: usize> {
     state_map: BidiMap<ItemSet<'grammar, 'rules, N>, NodeIndex>,
-    lr0_core_map: BTreeMap<ItemSet<'grammar, 'rules, 0>, NodeIndex>,
+    lr0_core_map: HashMap<ItemSet<'grammar, 'rules, 0>, NodeIndex>,
     graph: Graph<(), Symbol>,
     entry_state: Option<NodeIndex>,
 }
@@ -108,7 +109,7 @@ impl<'grammar, 'rules, const N: usize> ParserGraph<'grammar, 'rules, N> {
     fn new() -> Self {
         ParserGraph {
             state_map: BidiMap::new(),
-            lr0_core_map: BTreeMap::new(),
+            lr0_core_map: HashMap::new(),
             graph: DiGraph::new(),
             entry_state: None,
         }
@@ -161,9 +162,13 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
     lalr: bool,
 ) -> ParserGraph<'grammar, 'rules, N> {
     let entry_item = Item::new(grammar.entry_rule(), [Symbol::End; N]);
-    let entry_item_set = expand_item(entry_item, grammar, first_sets);
+
+    let rules_map = build_rules_map(grammar);
+    let mut item_set_cache = HashMap::new();
+
+    let entry_item_set = expand_item(entry_item, &rules_map, first_sets, &mut item_set_cache);
     let mut parser_graph = ParserGraph::new();
-    let entry_state = parser_graph.add_state(entry_item_set);
+    let entry_state = parser_graph.add_state(entry_item_set.clone());
     parser_graph.entry_state = Some(entry_state);
 
     let mut unprocessed_states = Vec::new();
@@ -177,11 +182,12 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
                 let mut target_item = item.clone();
                 if target_item.rule().lhs().is_some() {
                     target_item.advance_dot();
-                    let target_item_set = expand_item(target_item, grammar, first_sets);
+                    let target_item_set =
+                        expand_item(target_item, &rules_map, first_sets, &mut item_set_cache);
                     let transition_set = transition_map
                         .entry(transition_symbol)
-                        .or_insert(BTreeSet::new());
-                    transition_set.extend(target_item_set.into_iter());
+                        .or_insert(ItemSet::new());
+                    transition_set.extend(target_item_set.iter().map(|i| i.clone()));
                 }
             }
         }
@@ -216,10 +222,24 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
     parser_graph
 }
 
+fn build_rules_map<'grammar: 'rules, 'rules>(
+    grammar: &'grammar Grammar<'rules>,
+) -> BTreeMap<Symbol, Vec<&'grammar Rule<'rules>>> {
+    let mut rules_map: BTreeMap<Symbol, Vec<&'grammar Rule<'rules>>> = BTreeMap::new();
+    grammar
+        .rules()
+        .iter()
+        .filter_map(|r| r.lhs().map(|lhs| (lhs, r)))
+        .for_each(|(lhs, rule)| {
+            rules_map.entry(lhs).or_insert(Vec::new()).push(rule);
+        });
+    rules_map
+}
+
 fn merge_into_state<'grammar: 'rules, 'rules, const N: usize>(
     parser_graph: &mut ParserGraph<'grammar, 'rules, N>,
     state: NodeIndex,
-    item_set: BTreeSet<Item<'grammar, 'rules, N>>,
+    item_set: ItemSet<'grammar, 'rules, N>,
 ) -> Option<bool> {
     parser_graph.update_item_set(&state, |update| {
         let mut reprocess = false;

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, hash::Hash};
 
 use lapex_input::{ProductionRule, Spanned};
 
@@ -9,6 +9,14 @@ pub struct Item<'grammar, 'rules, const N: usize> {
     rule: &'grammar Rule<'rules>,
     dot_position: usize,
     lookahead: [Symbol; N],
+}
+
+impl<'grammar, 'rules, const N: usize> Hash for Item<'grammar, 'rules, N> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.rule, state);
+        self.dot_position.hash(state);
+        self.lookahead.hash(state);
+    }
 }
 
 pub struct ItemDisplay<'item, 'grammar, 'rules, const N: usize> {

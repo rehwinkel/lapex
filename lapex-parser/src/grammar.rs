@@ -31,7 +31,7 @@ impl From<TryFromIntError> for GrammarError {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Symbol {
     Epsilon,
     End,
