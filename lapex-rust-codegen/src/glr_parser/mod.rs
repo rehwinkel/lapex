@@ -577,7 +577,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                         let mut errors = Vec::new();
                         let all_error_count = to_reduce.len();
                         let mut new_to_reduce = Vec::new();
-                        'stacks: for stack in to_reduce {
+                        for stack in to_reduce {
                             let state = *stack.top().unwrap();
                             match self.next_actions(state, next_token.clone()) {
                                 Ok(actions) => {
@@ -592,8 +592,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                                                 );
                                             }
                                             Action::Shift => {
-                                                reduced.push(stack);
-                                                continue 'stacks;
+                                                reduced.push(stack.clone_and_fork_record());
                                             }
                                         };
                                     }
@@ -604,7 +603,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                             }
                         }
                         // if all reduces errored, the parser must have encountered an error
-                        if errors.len() == all_error_count {
+                        if reduced.is_empty() && errors.len() == all_error_count {
                             return Err(errors);
                         }
                         to_reduce = new_to_reduce;
