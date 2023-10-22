@@ -31,8 +31,8 @@ fn get_lr0_core<'grammar, 'rules, const N: usize>(
 
 fn expand_item<'grammar: 'rules, 'rules, 'a, const N: usize>(
     item: Item<'grammar, 'rules, N>,
-    rules_map: &BTreeMap<Symbol, Vec<&'grammar Rule>>,
     first_sets: &BTreeMap<Symbol, BTreeSet<Symbol>>,
+    rules_map: &HashMap<Symbol, Vec<&'grammar Rule>>,
     item_set_cache: &'a mut HashMap<Item<'grammar, 'rules, N>, ItemSet<'grammar, 'rules, N>>,
 ) -> &'a ItemSet<'grammar, 'rules, N> {
     item_set_cache.entry(item.clone()).or_insert_with(|| {
@@ -166,7 +166,7 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
     let rules_map = build_rules_map(grammar);
     let mut item_set_cache = HashMap::new();
 
-    let entry_item_set = expand_item(entry_item, &rules_map, first_sets, &mut item_set_cache);
+    let entry_item_set = expand_item(entry_item, first_sets, &rules_map, &mut item_set_cache);
     let mut parser_graph = ParserGraph::new();
     let entry_state = parser_graph.add_state(entry_item_set.clone());
     parser_graph.entry_state = Some(entry_state);
@@ -176,14 +176,14 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
 
     while let Some(start_state) = unprocessed_states.pop() {
         let item_set = parser_graph.get_item_set(&start_state).unwrap();
-        let mut transition_map: BTreeMap<Symbol, ItemSet<'grammar, 'rules, N>> = BTreeMap::new();
+        let mut transition_map: HashMap<Symbol, ItemSet<'grammar, 'rules, N>> = HashMap::new();
         for item in item_set {
             if let Some(transition_symbol) = item.symbol_after_dot() {
                 let mut target_item = item.clone();
                 if target_item.rule().lhs().is_some() {
                     target_item.advance_dot();
                     let target_item_set =
-                        expand_item(target_item, &rules_map, first_sets, &mut item_set_cache);
+                        expand_item(target_item, first_sets, &rules_map, &mut item_set_cache);
                     let transition_set = transition_map
                         .entry(transition_symbol)
                         .or_insert(ItemSet::new());
@@ -224,8 +224,8 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
 
 fn build_rules_map<'grammar: 'rules, 'rules>(
     grammar: &'grammar Grammar<'rules>,
-) -> BTreeMap<Symbol, Vec<&'grammar Rule<'rules>>> {
-    let mut rules_map: BTreeMap<Symbol, Vec<&'grammar Rule<'rules>>> = BTreeMap::new();
+) -> HashMap<Symbol, Vec<&'grammar Rule<'rules>>> {
+    let mut rules_map: HashMap<Symbol, Vec<&'grammar Rule<'rules>>> = HashMap::new();
     grammar
         .rules()
         .iter()
