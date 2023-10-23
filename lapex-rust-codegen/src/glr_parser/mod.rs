@@ -245,7 +245,11 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                 })
                 .collect();
             actions.push(quote! {
-                (#state, _) => Err(ParserError::UnexpectedToken { got: next_token, expected: vec![#(TokenType::#expected),*] }),
+                (#state, _) => Err(ParserError::UnexpectedToken {
+                    got: next_token,
+                    got_data: next_data,
+                    expected: vec![#(TokenType::#expected),*],
+                }),
             });
         }
         actions
@@ -428,23 +432,28 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
             type StateId = usize;
 
             #[derive(Debug)]
-            pub enum ParserError {
+            pub enum ParserError<T> {
                 UnexpectedToken {
                     got: TokenType,
+                    got_data: T,
                     expected: Vec<TokenType>,
                 },
                 UnexpectedTokens {
-                    got: Vec<TokenType>,
+                    got: Vec<(TokenType, T)>,
                     expected: Vec<Vec<TokenType>>,
                 },
             }
 
-            impl std::error::Error for ParserError {}
+            impl<T: std::fmt::Debug> std::error::Error for ParserError<T> {}
 
-            impl std::fmt::Display for ParserError {
+            impl<T> std::fmt::Display for ParserError<T> {
                 fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                     match self {
-                        ParserError::UnexpectedToken { got, expected } => write!(
+                        ParserError::UnexpectedToken {
+                            got,
+                            got_data: _,
+                            expected,
+                        } => write!(
                             f,
                             "Unexpected token {:?}, expected one of: {:?}",
                             got, expected
@@ -453,7 +462,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                             let errors: Vec<String> = got
                                 .iter()
                                 .zip(expected.iter())
-                                .map(|(got, expected)| {
+                                .map(|((got, _got_data), expected)| {
                                     format!(
                                         "Unexpected token {:?}, expected one of: {:?}",
                                         got, expected
@@ -484,7 +493,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     }
                 }
 
-                fn next_actions(&self, state: usize, next_token: TokenType) -> Result<&'static [Action], ParserError> {
+                fn next_actions(&self, state: usize, next_token: TokenType, next_data: T) -> Result<&'static [Action], ParserError<T>> {
                     match (state, next_token) {
                         #(#actions)*
                         (_, _) => unreachable!()
@@ -510,7 +519,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     }
                 }
 
-                pub fn parse(&mut self) -> Result<(), ParserError> {
+                pub fn parse(&mut self) -> Result<(), ParserError<T>> {
                     let mut lookahead = std::collections::VecDeque::new();
                     lookahead.push_back((self.token_function)());
 
@@ -519,9 +528,9 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     let mut stacks = vec![stack];
 
                     while !(stacks.len() == 1 && stacks[0].is_root()) {
-                        let (next_token, _) = lookahead.front().unwrap();
+                        let (next_token, next_data) = lookahead.front().unwrap();
                         let reduced = self
-                            .apply_reduces(stacks, next_token)
+                            .apply_reduces(stacks, next_token, next_data)
                             .map_err(combine_errors)?;
 
                         let (next_token, next_data) = lookahead.pop_front().unwrap();
@@ -570,7 +579,8 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     &mut self,
                     stacks: Vec<GraphNode<usize, StackSymbol, RecordedVisit<T>>>,
                     next_token: &TokenType,
-                ) -> Result<Vec<GraphNode<usize, StackSymbol, RecordedVisit<T>>>, Vec<ParserError>> {
+                    next_data: &T
+                ) -> Result<Vec<GraphNode<usize, StackSymbol, RecordedVisit<T>>>, Vec<ParserError<T>>> {
                     let mut to_reduce = stacks;
                     let mut reduced = Vec::new();
                     while !to_reduce.is_empty() {
@@ -579,7 +589,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                         let mut new_to_reduce = Vec::new();
                         for stack in to_reduce {
                             let state = *stack.top().unwrap();
-                            match self.next_actions(state, next_token.clone()) {
+                            match self.next_actions(state, next_token.clone(), next_data.clone()) {
                                 Ok(actions) => {
                                     for action in actions {
                                         match action {
@@ -646,15 +656,19 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                 }
             }
 
-            fn combine_errors(mut errors: Vec<ParserError>) -> ParserError {
+            fn combine_errors<T>(mut errors: Vec<ParserError<T>>) -> ParserError<T> {
                 match errors.len() {
                     1 => errors.pop().unwrap(),
                     0 => unreachable!(),
                     _ => {
-                        let (got, expected): (Vec<TokenType>, Vec<Vec<TokenType>>) = errors
+                        let (got, expected): (Vec<(TokenType, T)>, Vec<Vec<TokenType>>) = errors
                             .into_iter()
                             .map(|e| match e {
-                                ParserError::UnexpectedToken { got, expected } => (got, expected),
+                                ParserError::UnexpectedToken {
+                                    got,
+                                    got_data,
+                                    expected,
+                                } => ((got, got_data), expected),
                                 _ => unreachable!(),
                             })
                             .unzip();
