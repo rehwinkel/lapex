@@ -398,7 +398,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
         let rule_visits: Vec<TokenStream> = self.make_rule_visits();
 
         let tokens = quote! {
-            pub struct Parser<T, F: FnMut() -> (TokenType, T), V: Visitor<T>> {
+            pub struct Parser<T, E, F: FnMut() -> Result<(TokenType, T), E>, V: Visitor<T>> {
                 token_function: F,
                 visitor: V,
             }
@@ -432,11 +432,14 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
             type StateId = usize;
 
             #[derive(Debug)]
-            pub enum ParserError<T> {
+            pub enum ParserError<T, E: std::error::Error> {
                 UnexpectedToken {
                     got: TokenType,
                     got_data: T,
                     expected: Vec<TokenType>,
+                },
+                LexerError {
+                    inner: E
                 },
                 UnexpectedTokens {
                     got: Vec<(TokenType, T)>,
@@ -444,9 +447,9 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                 },
             }
 
-            impl<T: std::fmt::Debug> std::error::Error for ParserError<T> {}
+            impl<T: std::fmt::Debug, E: std::error::Error> std::error::Error for ParserError<T, E> {}
 
-            impl<T> std::fmt::Display for ParserError<T> {
+            impl<T, E: std::error::Error> std::fmt::Display for ParserError<T, E> {
                 fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                     match self {
                         ParserError::UnexpectedToken {
@@ -458,6 +461,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                             "Unexpected token {:?}, expected one of: {:?}",
                             got, expected
                         ),
+                        ParserError::LexerError { inner } => write!(f, "{}", inner),
                         ParserError::UnexpectedTokens { got, expected } => {
                             let errors: Vec<String> = got
                                 .iter()
@@ -485,7 +489,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                 Shift { token: TokenType, data: T },
             }
 
-            impl<T: Clone, F: FnMut() -> (TokenType, T), V: Visitor<T>> Parser<T, F, V> {
+            impl<T: Clone, E: std::error::Error, F: FnMut() -> Result<(TokenType, T), E>, V: Visitor<T>> Parser<T, E, F, V> {
                 pub fn new(token_function: F, visitor: V) -> Self {
                     Parser {
                         token_function,
@@ -493,7 +497,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     }
                 }
 
-                fn next_actions(&self, state: usize, next_token: TokenType, next_data: T) -> Result<&'static [Action], ParserError<T>> {
+                fn next_actions(&self, state: usize, next_token: TokenType, next_data: T) -> Result<&'static [Action], ParserError<T, E>> {
                     match (state, next_token) {
                         #(#actions)*
                         (_, _) => unreachable!()
@@ -519,9 +523,9 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     }
                 }
 
-                pub fn parse(&mut self) -> Result<(), ParserError<T>> {
+                pub fn parse(&mut self) -> Result<(), ParserError<T, E>> {
                     let mut lookahead = std::collections::VecDeque::new();
-                    lookahead.push_back((self.token_function)());
+                    lookahead.push_back((self.token_function)().map_err(|e| ParserError::LexerError { inner: e })?);
 
                     let root = GraphNode::root();
                     let stack = root.push(Some(#entry), None);
@@ -535,7 +539,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
 
                         let (next_token, next_data) = lookahead.pop_front().unwrap();
                         let new_symbol = StackSymbol::Terminal { token: next_token };
-                        lookahead.push_back((self.token_function)());
+                        lookahead.push_back((self.token_function)().map_err(|e| ParserError::LexerError { inner: e })?);
 
                         let mut new_stacks = if reduced.iter().any(|s| s.top().is_none()) {
                             reduced
@@ -580,7 +584,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     stacks: Vec<GraphNode<usize, StackSymbol, RecordedVisit<T>>>,
                     next_token: &TokenType,
                     next_data: &T
-                ) -> Result<Vec<GraphNode<usize, StackSymbol, RecordedVisit<T>>>, Vec<ParserError<T>>> {
+                ) -> Result<Vec<GraphNode<usize, StackSymbol, RecordedVisit<T>>>, Vec<ParserError<T, E>>> {
                     let mut to_reduce = stacks;
                     let mut reduced = Vec::new();
                     while !to_reduce.is_empty() {
@@ -656,7 +660,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                 }
             }
 
-            fn combine_errors<T>(mut errors: Vec<ParserError<T>>) -> ParserError<T> {
+            fn combine_errors<T, E: std::error::Error>(mut errors: Vec<ParserError<T, E>>) -> ParserError<T, E> {
                 match errors.len() {
                     1 => errors.pop().unwrap(),
                     0 => unreachable!(),
