@@ -1,4 +1,8 @@
-use std::{fmt::Display, hash::Hash};
+use std::{
+    fmt::{Debug, Display},
+    hash::Hash,
+    ops::Deref,
+};
 
 use lapex_input::{ProductionRule, Spanned};
 
@@ -6,19 +10,58 @@ use crate::grammar::{Grammar, Rule, Symbol};
 
 type DotIdx = u8;
 
-#[derive(Debug, Clone)]
-pub struct Item<'grammar, 'rules, const N: usize> {
-    rule: &'grammar Rule<'rules>,
-    dot_position: DotIdx,
-    lookahead: [Symbol; N],
+struct RuleRef<'grammar, 'rules>(pub &'grammar Rule<'rules>);
+
+impl<'grammar, 'rules> Clone for RuleRef<'grammar, 'rules> {
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
 }
 
-impl<'grammar, 'rules, const N: usize> Hash for Item<'grammar, 'rules, N> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        std::ptr::hash(self.rule, state);
-        self.dot_position.hash(state);
-        self.lookahead.hash(state);
+impl<'grammar, 'rules> Deref for RuleRef<'grammar, 'rules> {
+    type Target = Rule<'rules>;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
     }
+}
+
+impl<'grammar, 'rules> Debug for RuleRef<'grammar, 'rules> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", (self.0) as *const Rule)
+    }
+}
+
+impl<'grammar, 'rules> PartialEq for RuleRef<'grammar, 'rules> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::eq(self, other)
+    }
+}
+impl<'grammar, 'rules> Eq for RuleRef<'grammar, 'rules> {}
+
+impl<'grammar, 'rules> PartialOrd for RuleRef<'grammar, 'rules> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        (self.0 as *const Rule).partial_cmp(&(other.0 as *const Rule))
+    }
+}
+
+impl<'grammar, 'rules> Ord for RuleRef<'grammar, 'rules> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.0 as *const Rule).cmp(&(other.0 as *const Rule))
+    }
+}
+
+impl<'grammar, 'rules> Hash for RuleRef<'grammar, 'rules> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.0, state);
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Item<'grammar, 'rules, const N: usize> {
+    rule: RuleRef<'grammar, 'rules>,
+    dot_position: DotIdx,
+    lookahead: [Symbol; N],
 }
 
 pub struct ItemDisplay<'item, 'grammar, 'rules, const N: usize> {
@@ -79,7 +122,7 @@ impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
     pub fn new(rule: &'grammar Rule<'rules>, lookahead: [Symbol; N]) -> Self {
         Item {
             dot_position: 0,
-            rule,
+            rule: RuleRef(rule),
             lookahead: lookahead,
         }
     }
@@ -87,7 +130,7 @@ impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
     pub fn to_lr0(&self) -> Item<'grammar, 'rules, 0> {
         Item {
             dot_position: self.dot_position,
-            rule: self.rule,
+            rule: RuleRef(self.rule.0),
             lookahead: [],
         }
     }
@@ -115,6 +158,7 @@ impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
 
     pub fn symbols_following_symbol_after_dot(&self) -> impl Iterator<Item = Symbol> + 'grammar {
         self.rule
+            .0
             .rhs()
             .iter()
             .skip(self.dot_position.checked_add(1).unwrap() as usize)
@@ -131,7 +175,7 @@ impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
     }
 
     pub fn rule(&self) -> &'grammar Rule<'rules> {
-        self.rule
+        self.rule.0
     }
 }
 
@@ -142,34 +186,5 @@ impl<'grammar, 'rules, const N: usize> Display for Item<'grammar, 'rules, N> {
         write!(f, " . ")?;
         write!(f, "{:?}", &self.rule.rhs()[(self.dot_position as usize)..])?;
         write!(f, " {:?}", &self.lookahead)
-    }
-}
-
-impl<'grammar, 'rules, const N: usize> PartialEq for Item<'grammar, 'rules, N> {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.rule, other.rule)
-            && self.dot_position == other.dot_position
-            && self.lookahead == other.lookahead
-    }
-}
-
-impl<'grammar, 'rules, const N: usize> Eq for Item<'grammar, 'rules, N> {}
-
-impl<'grammar, 'rules, const N: usize> PartialOrd for Item<'grammar, 'rules, N> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(
-            (self.rule as *const Rule)
-                .partial_cmp(&(other.rule as *const Rule))?
-                .then(self.dot_position.cmp(&other.dot_position)),
-        )
-    }
-}
-
-impl<'grammar, 'rules, const N: usize> Ord for Item<'grammar, 'rules, N> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        (self.rule as *const Rule)
-            .cmp(&(other.rule as *const Rule))
-            .then(self.dot_position.cmp(&other.dot_position))
-            .then(self.lookahead.cmp(&other.lookahead))
     }
 }
