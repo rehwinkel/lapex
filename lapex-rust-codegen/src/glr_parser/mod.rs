@@ -5,7 +5,7 @@ use std::{
 
 use lapex_codegen::GeneratedCodeWriter;
 use lapex_parser::{
-    grammar::{Grammar, Rule, Symbol},
+    grammar::{Grammar, Rule, Symbol, SymbolIdx},
     lr_parser::{ActionGotoTable, LRParserCodeGen, TableEntry},
 };
 use quote::{__private::TokenStream, quote};
@@ -309,7 +309,7 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
         &self,
         entry: &TableEntry,
         symbol: Symbol,
-        expected_symbols: &mut BTreeSet<Option<u32>>,
+        expected_symbols: &mut BTreeSet<Option<SymbolIdx>>,
     ) {
         match entry {
             TableEntry::Shift { target: _ } | TableEntry::Reduce { rule: _ } => match symbol {

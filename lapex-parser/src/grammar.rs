@@ -9,6 +9,8 @@ use lapex_input::{ProductionRule, RuleSet, SourceSpan, Spanned};
 
 use crate::grammar_builder::GrammarBuilder;
 
+pub type SymbolIdx = u16;
+
 #[derive(Debug, PartialEq)]
 pub enum GrammarError {
     TooManyRules,
@@ -35,13 +37,13 @@ impl From<TryFromIntError> for GrammarError {
 pub enum Symbol {
     Epsilon,
     End,
-    NonTerminal(u32),
-    Terminal(u32),
+    NonTerminal(SymbolIdx),
+    Terminal(SymbolIdx),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rule<'rules> {
-    lhs: Option<u32>,
+    lhs: Option<SymbolIdx>,
     rhs: Vec<Symbol>,
     rule: &'rules Spanned<ProductionRule<'rules>>,
 }
@@ -182,7 +184,7 @@ impl<'rules> Grammar<'rules> {
             .map(|(sym, token_rule)| (sym.clone(), *token_rule))
     }
 
-    pub fn get_token_name(&self, index: u32) -> &str {
+    pub fn get_token_name(&self, index: SymbolIdx) -> &str {
         self.tokens
             .get(&Symbol::Terminal(index))
             .map(|r| r)

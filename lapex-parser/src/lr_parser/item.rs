@@ -4,10 +4,12 @@ use lapex_input::{ProductionRule, Spanned};
 
 use crate::grammar::{Grammar, Rule, Symbol};
 
+type DotIdx = u8;
+
 #[derive(Debug, Clone)]
 pub struct Item<'grammar, 'rules, const N: usize> {
     rule: &'grammar Rule<'rules>,
-    dot_position: usize,
+    dot_position: DotIdx,
     lookahead: [Symbol; N],
 }
 
@@ -43,7 +45,7 @@ impl<'rule, 'grammar, 'rules, const N: usize> Display for ItemDisplay<'rule, 'gr
             .rule
             .rhs()
             .into_iter()
-            .take(self.item.dot_position)
+            .take(self.item.dot_position as usize)
             .map(|s| self.grammar.get_symbol_name(s))
             .collect();
         let rhs_sequence_post_dot: Vec<String> = self
@@ -51,7 +53,7 @@ impl<'rule, 'grammar, 'rules, const N: usize> Display for ItemDisplay<'rule, 'gr
             .rule
             .rhs()
             .into_iter()
-            .skip(self.item.dot_position)
+            .skip(self.item.dot_position as usize)
             .map(|s| self.grammar.get_symbol_name(s))
             .collect();
         if let Some(lhs) = &self.item.rule.lhs() {
@@ -100,8 +102,11 @@ impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
 }
 
 impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
-    pub fn symbol_after_dot_offset(&self, offset: usize) -> Option<Symbol> {
-        self.rule.rhs().get(self.dot_position + offset).map(|s| *s)
+    pub fn symbol_after_dot_offset(&self, offset: DotIdx) -> Option<Symbol> {
+        self.rule
+            .rhs()
+            .get(self.dot_position.checked_add(offset).unwrap() as usize)
+            .map(|s| *s)
     }
 
     pub fn symbol_after_dot(&self) -> Option<Symbol> {
@@ -112,13 +117,13 @@ impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
         self.rule
             .rhs()
             .iter()
-            .skip(self.dot_position + 1)
+            .skip(self.dot_position.checked_add(1).unwrap() as usize)
             .map(|s| *s)
     }
 
     pub fn advance_dot(&mut self) -> bool {
-        if self.dot_position < self.rule.rhs().len() {
-            self.dot_position += 1;
+        if (self.dot_position as usize) < self.rule.rhs().len() {
+            self.dot_position = self.dot_position.checked_add(1).unwrap();
             true
         } else {
             false
@@ -133,9 +138,9 @@ impl<'grammar, 'rules, const N: usize> Item<'grammar, 'rules, N> {
 impl<'grammar, 'rules, const N: usize> Display for Item<'grammar, 'rules, N> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?} -> ", self.rule.lhs())?;
-        write!(f, "{:?}", &self.rule.rhs()[0..self.dot_position])?;
+        write!(f, "{:?}", &self.rule.rhs()[0..(self.dot_position as usize)])?;
         write!(f, " . ")?;
-        write!(f, "{:?}", &self.rule.rhs()[self.dot_position..])?;
+        write!(f, "{:?}", &self.rule.rhs()[(self.dot_position as usize)..])?;
         write!(f, " {:?}", &self.lookahead)
     }
 }

@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 
 use lapex_input::{ProductionPattern, ProductionRule, RuleSet, Spanned, TokenRule};
 
-use crate::grammar::{Grammar, GrammarError, Rule, Symbol};
+use crate::grammar::{Grammar, GrammarError, Rule, Symbol, SymbolIdx};
 
 pub struct GrammarBuilder<'rules> {
-    temp_count: u32,
+    temp_count: SymbolIdx,
     symbols: BTreeMap<&'rules str, Symbol>,
-    max_symbol: u32,
+    max_symbol: SymbolIdx,
     anonymous_non_terminals: Vec<Symbol>,
     tokens: BTreeMap<Symbol, &'rules str>,
     productions: BTreeMap<Symbol, &'rules str>,
@@ -21,13 +21,13 @@ impl<'rules> GrammarBuilder<'rules> {
             .token_rules
             .iter()
             .enumerate()
-            .map(|(i, rule)| (rule.inner.name, Symbol::Terminal(i as u32), rule))
+            .map(|(i, rule)| (rule.inner.name, Symbol::Terminal(i as SymbolIdx), rule))
             .collect();
         let production_triples: Vec<(&str, Symbol, &Spanned<ProductionRule>)> = rule_set
             .production_rules
             .iter()
             .enumerate()
-            .map(|(i, rule)| (rule.inner.name, Symbol::NonTerminal(i as u32), rule))
+            .map(|(i, rule)| (rule.inner.name, Symbol::NonTerminal(i as SymbolIdx), rule))
             .collect();
         let mut symbols_with_span = BTreeMap::new();
         let mut tokens = BTreeMap::new();
@@ -82,7 +82,7 @@ impl<'rules> GrammarBuilder<'rules> {
     fn get_temp_symbol(&mut self) -> Result<Symbol, GrammarError> {
         let non_terminal = Symbol::NonTerminal(self.temp_count + self.max_symbol + 1);
         self.anonymous_non_terminals.push(non_terminal.clone());
-        self.temp_count += 1;
+        self.temp_count = self.temp_count.checked_add(1).unwrap();
         Ok(non_terminal)
     }
 

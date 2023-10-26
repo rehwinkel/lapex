@@ -1,11 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::num::NonZeroU32;
 
 pub use codegen::LLParserCodeGen;
 
-use crate::grammar::{Grammar, GrammarError, Symbol};
+use crate::grammar::{Grammar, GrammarError, Symbol, SymbolIdx};
 use crate::util::{compute_first_sets, get_first_terminals_of_sequence};
 
 mod codegen;
@@ -102,7 +101,7 @@ impl Display for LLParserError {
 
 #[derive(Debug, PartialEq)]
 pub struct LLParserTable {
-    table: BTreeMap<(u32, Option<NonZeroU32>), Vec<Symbol>>,
+    table: BTreeMap<(SymbolIdx, Option<SymbolIdx>), Vec<Symbol>>,
 }
 
 impl LLParserTable {
@@ -118,7 +117,7 @@ impl LLParserTable {
                 Symbol::Terminal(terminal_index) => {
                     return self
                         .table
-                        .get(&(non_terminal_index, NonZeroU32::new(terminal_index + 1)));
+                        .get(&(non_terminal_index, Some(terminal_index + 1)));
                 }
                 Symbol::End => {
                     return self.table.get(&(non_terminal_index, None));
@@ -131,8 +130,8 @@ impl LLParserTable {
 
     fn check_for_conflict_and_insert(
         &mut self,
-        non_terminal_index: u32,
-        terminal_index: Option<NonZeroU32>,
+        non_terminal_index: SymbolIdx,
+        terminal_index: Option<SymbolIdx>,
         production: Vec<Symbol>,
     ) -> Result<(), LLParserError> {
         let table_key = (non_terminal_index, terminal_index);
@@ -140,7 +139,7 @@ impl LLParserTable {
             return Err(LLParserError::ParserTableConflict {
                 non_terminal: Symbol::NonTerminal(non_terminal_index),
                 terminal: match terminal_index {
-                    Some(terminal_index) => Symbol::Terminal(terminal_index.get() - 1),
+                    Some(terminal_index) => Symbol::Terminal(terminal_index - 1),
                     None => Symbol::End,
                 },
                 production: production.clone(),
@@ -163,7 +162,7 @@ impl LLParserTable {
                 Symbol::Terminal(terminal_index) => {
                     self.check_for_conflict_and_insert(
                         non_terminal_index,
-                        NonZeroU32::new(terminal_index + 1),
+                        Some(terminal_index + 1),
                         production,
                     )?;
                     return Ok(());
