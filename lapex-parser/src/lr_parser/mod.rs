@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt::Display,
     io::Write,
 };
@@ -22,9 +22,16 @@ pub use codegen::LRParserCodeGen;
 use item::Item;
 
 type ItemSet<'grammar, 'rules, const N: usize> = BTreeSet<Item<'grammar, 'rules, N>>;
+type ItemHashSet<'grammar, 'rules, const N: usize> = HashSet<Item<'grammar, 'rules, N>>;
 
-fn get_lr0_core<'grammar, 'rules, const N: usize>(
+fn get_lr0_core<'a, 'grammar, 'rules, const N: usize>(
     item_set: &ItemSet<'grammar, 'rules, N>,
+) -> ItemSet<'grammar, 'rules, 0> {
+    item_set.into_iter().map(|item| item.to_lr0()).collect()
+}
+
+fn get_hash_lr0_core<'a, 'grammar, 'rules, const N: usize>(
+    item_set: &ItemHashSet<'grammar, 'rules, N>,
 ) -> ItemSet<'grammar, 'rules, 0> {
     item_set.into_iter().map(|item| item.to_lr0()).collect()
 }
@@ -142,8 +149,8 @@ impl<'grammar, 'rules, const N: usize> ParserGraph<'grammar, 'rules, N> {
         self.state_map.get_a_to_b(set)
     }
 
-    fn get_state_by_lr0_core(&self, set: &ItemSet<'grammar, 'rules, N>) -> Option<&NodeIndex> {
-        self.lr0_core_map.get(&get_lr0_core(set))
+    fn get_state_by_lr0_core(&self, set: &ItemHashSet<'grammar, 'rules, N>) -> Option<&NodeIndex> {
+        self.lr0_core_map.get(&get_hash_lr0_core(set))
     }
 
     fn add_transition(
@@ -176,7 +183,8 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
 
     while let Some(start_state) = unprocessed_states.pop() {
         let item_set = parser_graph.get_item_set(&start_state).unwrap();
-        let mut transition_map: BTreeMap<Symbol, ItemSet<'grammar, 'rules, N>> = BTreeMap::new();
+        let mut transition_map: BTreeMap<Symbol, ItemHashSet<'grammar, 'rules, N>> =
+            BTreeMap::new();
         for item in item_set {
             if let Some(transition_symbol) = item.symbol_after_dot() {
                 let mut target_item = item.clone();
@@ -186,7 +194,7 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
                         expand_item(target_item, first_sets, &rules_map, &mut item_set_cache);
                     let transition_set = transition_map
                         .entry(transition_symbol)
-                        .or_insert(ItemSet::new());
+                        .or_insert(ItemHashSet::new());
                     transition_set.extend(target_item_set.iter().map(|i| i.clone()));
                 }
             }
@@ -196,18 +204,21 @@ fn generate_parser_graph<'grammar: 'rules, 'rules, const N: usize>(
                 let target_state = if let Some(state) =
                     parser_graph.get_state_by_lr0_core(&item_set).map(|s| *s)
                 {
+                    let item_set = item_set.into_iter().collect();
                     let merged = merge_into_state(&mut parser_graph, state, item_set).unwrap();
                     if merged {
                         unprocessed_states.push(state);
                     }
                     state
                 } else {
+                    let item_set = item_set.into_iter().collect();
                     let state = parser_graph.add_state(item_set);
                     unprocessed_states.push(state);
                     state
                 };
                 parser_graph.add_transition(start_state, target_state, edge);
             } else {
+                let item_set = item_set.into_iter().collect();
                 let target_state = if let Some(state) = parser_graph.get_state(&item_set) {
                     *state
                 } else {

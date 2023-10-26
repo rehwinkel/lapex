@@ -34,7 +34,7 @@ impl<'grammar, 'rules> Debug for RuleRef<'grammar, 'rules> {
 
 impl<'grammar, 'rules> PartialEq for RuleRef<'grammar, 'rules> {
     fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self, other)
+        std::ptr::eq(self.0, other.0)
     }
 }
 impl<'grammar, 'rules> Eq for RuleRef<'grammar, 'rules> {}
