@@ -35,6 +35,7 @@ enum Rule<'src> {
 enum Ast<'src> {
     Token(&'src str),
     Rule(Rule<'src>),
+    Tag(Option<&'src str>),
     Pattern(ProductionPattern<'src>),
     Rules(Vec<Spanned<Rule<'src>>>),
     Precedence(Option<u16>),
@@ -171,6 +172,11 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
             panic!("Stack is broken")
         };
         self.stack.pop();
+        let tag = if let Some(Ast::Tag(tag)) = self.stack.pop().map(|s| s.inner) {
+            tag
+        } else {
+            panic!("Stack is broken")
+        };
         let name = if let Some(Ast::Token(name)) = self.stack.pop().map(|s| s.inner) {
             name
         } else {
@@ -181,7 +187,8 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
             prod_span,
             semi_span,
             Ast::Rule(Rule::ProductionRule(ProductionRule {
-                name: name,
+                name,
+                tag,
                 pattern: rhs,
             })),
         ));
@@ -263,8 +270,14 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
         // NOOP
     }
 
-    fn reduce_pattern(&mut self) {
+    fn reduce_pattern_1(&mut self) {
         // NOOP
+    }
+
+    fn reduce_pattern_2(&mut self) {
+        let span = self.stack.pop().unwrap().span;
+        self.stack
+            .push(Spanned::new(span, Ast::Pattern(ProductionPattern::Epsilon)));
     }
 
     fn reduce_token_rule(&mut self) {
@@ -462,12 +475,32 @@ impl<'stack, 'src> parser::Visitor<TokenData<'src>> for LapexAstVisitor<'stack, 
         ));
     }
 
-    fn reduce_anon24_1(&mut self) {
+    fn reduce_anon27_1(&mut self) {
         // NOOP
     }
 
-    fn reduce_anon24_2(&mut self) {
+    fn reduce_anon27_2(&mut self) {
         self.stack.push(Spanned::zero(Ast::Precedence(None)));
+    }
+
+    fn reduce_tag(&mut self) {
+        let end_span = self.stack.pop().unwrap().span;
+        let tag = if let Some(Ast::Token(name)) = self.stack.pop().map(|s| s.inner) {
+            name
+        } else {
+            panic!("Stack is broken")
+        };
+        let start_span = self.stack.pop().unwrap().span;
+        self.stack
+            .push(Spanned::between(start_span, end_span, Ast::Tag(Some(tag))));
+    }
+
+    fn reduce_anon26_1(&mut self) {
+        // NOOP
+    }
+
+    fn reduce_anon26_2(&mut self) {
+        self.stack.push(Spanned::zero(Ast::Tag(None)));
     }
 }
 

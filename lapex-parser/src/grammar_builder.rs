@@ -184,6 +184,7 @@ impl<'rules> GrammarBuilder<'rules> {
                 Ok(vec![symbol])
             }
             ProductionPattern::Rule { rule_name } => Ok(vec![self.get_symbol_by_name(rule_name)?]),
+            ProductionPattern::Epsilon => Ok(vec![Symbol::Epsilon]),
         }
     }
 }

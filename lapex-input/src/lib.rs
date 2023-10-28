@@ -167,6 +167,7 @@ impl<'src> TokenRule<'src> {
 #[derive(Debug, PartialEq, Eq)]
 pub struct ProductionRule<'src> {
     pub name: &'src str,
+    pub tag: Option<&'src str>,
     pub pattern: ProductionPattern<'src>,
 }
 
@@ -195,6 +196,7 @@ pub enum ProductionPattern<'src> {
     Rule {
         rule_name: &'src str,
     },
+    Epsilon,
 }
 
 #[derive(Debug)]

@@ -68,9 +68,13 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                     let comment: TokenStream = format!("///{}", rule.display(self.grammar))
                         .parse()
                         .unwrap();
-                    let function: TokenStream = format!("reduce_{}_{}", non_terminal_name, i + 1)
-                        .parse()
-                        .unwrap();
+                    let tag = rule.rule().inner.tag;
+                    let name = if let Some(tag) = tag {
+                        format!("reduce_{}_{}", non_terminal_name, tag)
+                    } else {
+                        format!("reduce_{}_{}", non_terminal_name, i + 1)
+                    };
+                    let function: TokenStream = name.parse().unwrap();
                     reduce_functions.push(quote! {
                         #comment
                         fn #function (&mut self);
@@ -295,9 +299,13 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
                 for (i, rule) in rules.iter().enumerate() {
                     let rule_index = self.rule_index_map.get(&(*rule as *const Rule)).unwrap();
                     let rule_name: TokenStream = format!("Rule{}", rule_index).parse().unwrap();
-                    let function: TokenStream = format!("reduce_{}_{}", non_terminal_name, i + 1)
-                        .parse()
-                        .unwrap();
+                    let tag = rule.rule().inner.tag;
+                    let name = if let Some(tag) = tag {
+                        format!("reduce_{}_{}", non_terminal_name, tag)
+                    } else {
+                        format!("reduce_{}_{}", non_terminal_name, i + 1)
+                    };
+                    let function: TokenStream = name.parse().unwrap();
                     rule_visits.push(quote! {
                         ReducedRule::#rule_name => self.visitor.#function ()
                     });

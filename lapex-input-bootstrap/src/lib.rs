@@ -275,6 +275,7 @@ fn parse_production_rule(input: &[u8]) -> IResult<&[u8], ProductionRule> {
         input,
         ProductionRule {
             name: std::str::from_utf8(name).unwrap(),
+            tag: None,
             pattern,
         },
     ))

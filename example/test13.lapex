@@ -1,0 +1,9 @@
+token A = "a";
+token B = "b";
+
+entry ent;
+prod ent = tagged optionals;
+prod optionals = optionals A;
+prod optionals = !;
+prod tagged[sus] = A;
+prod tagged[bee] = B;
