@@ -114,9 +114,13 @@ impl<'grammar, 'rules> CodeWriter<'grammar, 'rules> {
             if rules.len() != 1 {
                 for (i, rule) in rules.iter().enumerate() {
                     let comment = format!("{}", rule.display(self.grammar));
-                    let function: TokenStream = format!("reduce_{}_{}", non_terminal_name, i + 1)
-                        .parse()
-                        .unwrap();
+                    let tag = rule.rule().inner.tag;
+                    let name = if let Some(tag) = tag {
+                        format!("reduce_{}_{}", non_terminal_name, tag)
+                    } else {
+                        format!("reduce_{}_{}", non_terminal_name, i + 1)
+                    };
+                    let function: TokenStream = name.parse().unwrap();
                     reduce_functions.push(quote! {
                         fn #function(&mut self) {
                             println!(#comment);
