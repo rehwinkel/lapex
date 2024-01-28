@@ -1,0 +1,7 @@
+token A = "a";
+
+entry list;
+
+prod list[many] = A list;
+prod list[one] = A;
+prod list[none] = !;

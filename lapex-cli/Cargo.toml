@@ -8,3 +8,4 @@ color-eyre = { version = "0.6", default-features = false }
 clap = { version = "4.3.16", features = ["derive"] }
 lapex = { path = "../lapex" }
 lapex-input-gen = { path = "../lapex-input-gen" }
+tempdir = "0.3.7"
